@@ -494,7 +494,8 @@ namespace PcInventory.Gui
             if (r["SoftSkipped"] != "")
                 msgs.Add(new KvList.Row("", "Программы пользователей " + r["SoftSkipped"] + " не прочитаны: нужен запуск от имени администратора.", "warn"));
             bool admin = UserHives.IsAdmin();
-            if (!admin && r["SoftSkipped"] == "")
+            // Счётчики SMART на новых Windows бывают доступны и без прав — предупреждаем, только если чтение реально запрещено
+            if (!admin && r["SoftSkipped"] == "" && r["DiskHealth"].Contains("от имени администратора"))
                 msgs.Add(new KvList.Row("", "Без прав администратора не видны износ и температура дисков.", "warn"));
             if (msgs.Count == 0) msgs.Add(new KvList.Row("", "Сведения собраны без ошибок.", Collector.Ok));
             adminHint = !admin;
