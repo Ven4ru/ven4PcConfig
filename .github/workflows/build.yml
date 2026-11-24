@@ -49,7 +49,8 @@ jobs:
         run: |
           $files = 'dist/ven4PcConfig.zip', 'dist/ven4PcConfig/ven4PcConfig.exe'
           $lines = foreach ($f in $files) { '{0}  {1}' -f (Get-FileHash $f -Algorithm SHA256).Hash.ToLower(), (Split-Path $f -Leaf) }
-          $lines | Set-Content -Encoding utf8NoBOM dist/SHA256SUMS.txt
+          # Концы строк LF: так файл читает `sha256sum -c`
+          [IO.File]::WriteAllText((Join-Path $PWD 'dist/SHA256SUMS.txt'), ($lines -join "`n") + "`n")
           "### SHA256`n``````n$($lines -join "`n")`n``````" | Add-Content $env:GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
