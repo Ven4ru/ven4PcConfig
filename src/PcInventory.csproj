@@ -13,7 +13,7 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <DebugType>none</DebugType>
-    <Version>1.2.0</Version>
+    <Version>1.2.1</Version>
     <Product>ven4PcConfig</Product>
   </PropertyGroup>
   <ItemGroup>
