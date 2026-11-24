@@ -1,0 +1,72 @@
+# Сборка ven4PcConfig на серверах GitHub.
+# - каждый push в main и каждый pull request: сборка, архив и SHA256 в артефакте запуска;
+# - метка vX.Y.Z: то же + архив и SHA256SUMS.txt в выпуск GitHub с этой меткой;
+# - ручной запуск с полем «tag»: пересобрать уже вышедшую версию из её метки и заменить файлы выпуска.
+name: Сборка
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Метка выпуска (например v1.2.0), файлы которого заменить сборкой из этой метки'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name || '') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Сборка и архив
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Версия совпадает с меткой
+        if: env.RELEASE_TAG != ''
+        shell: pwsh
+        run: |
+          $ver = (Get-Item dist/ven4PcConfig/ven4PcConfig.exe).VersionInfo.ProductVersion -replace '\+.*$', ''
+          if ("v$ver" -ne $env:RELEASE_TAG) { throw "Версия exe $ver не совпадает с меткой $env:RELEASE_TAG" }
+
+      - name: SHA256
+        shell: pwsh
+        run: |
+          $files = 'dist/ven4PcConfig.zip', 'dist/ven4PcConfig/ven4PcConfig.exe'
+          $lines = foreach ($f in $files) { '{0}  {1}' -f (Get-FileHash $f -Algorithm SHA256).Hash.ToLower(), (Split-Path $f -Leaf) }
+          $lines | Set-Content -Encoding utf8NoBOM dist/SHA256SUMS.txt
+          "### SHA256`n``````n$($lines -join "`n")`n``````" | Add-Content $env:GITHUB_STEP_SUMMARY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ven4PcConfig
+          path: |
+            dist/ven4PcConfig.zip
+            dist/SHA256SUMS.txt
+
+      - name: Файлы в выпуск
+        if: env.RELEASE_TAG != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --title "ven4PcConfig $($env:RELEASE_TAG.TrimStart('v'))" --notes 'Собрано GitHub Actions.'
+          }
+          gh release upload $env:RELEASE_TAG dist/ven4PcConfig.zip dist/SHA256SUMS.txt --clobber --repo $env:GITHUB_REPOSITORY
