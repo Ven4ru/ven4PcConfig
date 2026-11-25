@@ -18,6 +18,8 @@ namespace PcInventory
         public List<string[]> Soft = new List<string[]>();
         /// <summary>Лицензии: вид, продукт, статус, канал/тип, ключ, действует до, подробности, оценка (ok/bad/"").</summary>
         public List<string[]> Lic = new List<string[]>();
+        /// <summary>История изменений: дата сбора, вид (добавлено/удалено/изменено), что, подробности.</summary>
+        public List<string[]> Changes = new List<string[]>();
 
         public string this[string k]
         {
@@ -38,6 +40,7 @@ namespace PcInventory
             if (!Directory.Exists(dir)) return list;
             foreach (var f in Directory.GetFiles(dir, "*.xml"))
             {
+                if (Service(Path.GetFileName(f))) continue;
                 PcRecord r;
                 try { r = Load(f); }
                 catch (Exception ex) { errors.Add(Path.GetFileName(f) + ": " + ex.Message); continue; }
@@ -49,6 +52,12 @@ namespace PcInventory
             }
             return list;
         }
+
+        /// <summary>Служебные файлы в папке данных (карта, настройки, отложенные повреждённые копии) — не компьютеры.</summary>
+        static bool Service(string name) =>
+            string.Equals(name, "карта.xml", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(name, "настройки.xml", StringComparison.OrdinalIgnoreCase) ||
+            name.IndexOf(".повреждён.", StringComparison.OrdinalIgnoreCase) >= 0;
 
         static PcRecord Load(string path)
         {
@@ -66,6 +75,7 @@ namespace PcInventory
                 else if (e.Name == "part") r.Parts.Add(Attrs(e, 4));
                 else if (e.Name == "sw") r.Soft.Add(Attrs(e, 5));
                 else if (e.Name == "lic") r.Lic.Add(Attrs(e, 8));
+                else if (e.Name == "chg") r.Changes.Add(Attrs(e, 4));
             }
             int format;
             if (!int.TryParse(root.GetAttribute("format"), out format) || format < 2) { Migrate1(r); r.Migrated = true; }
@@ -161,6 +171,7 @@ namespace PcInventory
                 Write(w, "part", r.Parts);
                 Write(w, "sw", r.Soft);
                 Write(w, "lic", r.Lic);
+                Write(w, "chg", r.Changes);
                 w.WriteEndElement();
                 w.WriteEndDocument();
             }

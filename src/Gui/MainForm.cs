@@ -45,6 +45,8 @@ namespace PcInventory.Gui
         readonly Progress progress = new Progress();
         readonly Card cardLic = new Card("Лицензии и состояние", Theme.IcoShield);
         readonly KvList kvLic = new KvList();
+        readonly Card cardChanges = new Card("Изменения с прошлого сбора", Theme.IcoRefresh);
+        readonly KvList kvChanges = new KvList { KeyWidth = 120, Separators = true };
         readonly Card cardArm = new Card("Карточка АРМ", Theme.IcoCard);
         readonly Caption capDept = new Caption("Отдел"), capRoom = new Caption("Кабинет", " (пусто — кабинет отдела)"), capId = new Caption("Номер АРМ"), capFio = new Caption("ФИО сотрудника"), capNote = new Caption("Примечание", " (необязательно)");
         readonly InputBox inDept = new InputBox(true), inRoom = new InputBox(true), inId = new InputBox(false), inFio = new InputBox(false), inNote = new InputBox(false);
@@ -66,6 +68,12 @@ namespace PcInventory.Gui
         readonly KvList kvIssues = new KvList { KeyWidth = 360, Separators = true };
         readonly Card cardTable = new Card("Компьютеры", Theme.IcoList);
         readonly Table table = new Table();
+        readonly InputBox inSearch = new InputBox(false);
+
+        // обновление программы
+        readonly V4Button btnUpdate = new V4Button("Обновить", Theme.IcoDown, true) { Visible = false };
+        string updateTag;
+        bool updating;
 
         // «Карта», «Настройки»
         MapPage mapPage;
@@ -131,6 +139,7 @@ namespace PcInventory.Gui
             mapPage = new MapPage(s, header);
             setPage = new SettingsPage(s);
             mapPage.DataChanged += (o, e) => { RefreshRegistry(); RefreshRooms(); };
+            setPage.RulesChanged += (o, e) => { RefreshRegistry(); if (collected) FillPc(); };
             BuildShell();
             BuildPcPage();
             BuildRegistryPage();
@@ -159,6 +168,8 @@ namespace PcInventory.Gui
                 sidebar.Controls.Add(n);
             }
             sidebar.Controls.Add(sideStatus);
+            sidebar.Controls.Add(btnUpdate);
+            btnUpdate.Click += (o, e) => RunUpdate();
             sidebar.Resize += (o, e) => LayoutSidebar();
 
             pages.Add(pgPc); pages.Add(pgReg); pages.Add(mapPage); pages.Add(setPage); pages.Add(pgAbout);
@@ -196,6 +207,7 @@ namespace PcInventory.Gui
                 y += Theme.S(48);
             }
             sideStatus.SetBounds(x, sidebar.Height - Theme.S(62), w, Theme.S(38));
+            btnUpdate.SetBounds(x, sideStatus.Top - Theme.S(46), w, Theme.S(38));
             sidebar.Invalidate();
         }
 
@@ -246,6 +258,8 @@ namespace PcInventory.Gui
             cardInfo.Controls.Add(kvInfo);
             cardInfo.Controls.Add(progress);
             cardLic.Controls.Add(kvLic);
+            cardChanges.Controls.Add(kvChanges);
+            pgPc.Controls.Add(cardChanges);
             kvInfo.KeyWidth = 140;
             kvLic.KeyWidth = 140;
             foreach (Control c in new Control[] { capDept, inDept, capRoom, inRoom, capId, inId, capFio, inFio, capNote, inNote, btnSave, armHint })
@@ -332,6 +346,14 @@ namespace PcInventory.Gui
                 cardLic.SetBounds(pad, yl, left, cardLic.ContentTop + lh + cardLic.Pad);
                 yl = cardLic.Bottom + gap;
             }
+            cardChanges.Visible = collected;
+            if (collected)
+            {
+                int ch = kvChanges.Measure(inner);
+                kvChanges.SetBounds(cardChanges.Pad, cardChanges.ContentTop, inner, ch);
+                cardChanges.SetBounds(pad, yl, left, cardChanges.ContentTop + ch + cardChanges.Pad);
+                yl = cardChanges.Bottom + gap;
+            }
 
             // правая колонка
             int rx = pad + left + gap, ri = right - cardArm.Pad * 2, ry = cardArm.ContentTop;
@@ -377,7 +399,75 @@ namespace PcInventory.Gui
             {
                 try { s.Load(); }
                 catch (Exception ex) { s.LoadErrors.Add(ex.Message); }
-                BeginInvoke((MethodInvoker)(() => { setPage.Fill(); RefreshRegistry(); StartCollect(); }));
+                BeginInvoke((MethodInvoker)(() => { setPage.Fill(); RefreshRegistry(); StartCollect(); CheckUpdate(); }));
+            }) { IsBackground = true }.Start();
+        }
+
+        // ================================================================ обновление
+        void CheckUpdate()
+        {
+            if (s.ReadOnly) return;
+            Updater.CleanupOld(s.BaseDir);
+            if (Array.IndexOf(Environment.GetCommandLineArgs(), "/updated") >= 0)
+            {
+                header.Status = "Программа обновлена до " + Program.Version;
+                header.StatusGrade = Collector.Ok;
+                header.Invalidate();
+            }
+            if (!s.Settings.AutoUpdate) { setPage.UpdateState.Text = "Проверка выключена. Версия " + Program.Version + "."; return; }
+            setPage.UpdateState.Text = "Проверяю, нет ли новой версии…";
+            new Thread(() =>
+            {
+                string tag = Updater.LatestTag();
+                try { BeginInvoke((MethodInvoker)(() => UpdateChecked(tag))); } catch { } // окно уже закрыто
+            }) { IsBackground = true }.Start();
+        }
+
+        void UpdateChecked(string tag)
+        {
+            if (tag != null && Updater.Newer(tag, Updater.CurrentVersion))
+            {
+                updateTag = tag;
+                btnUpdate.Text = "Обновить до " + tag.TrimStart('v');
+                btnUpdate.Visible = true;
+                setPage.UpdateState.Text = "Вышла версия " + tag.TrimStart('v') + " (у вас " + Updater.CurrentVersion + ") — кнопка «Обновить» слева внизу.";
+            }
+            else setPage.UpdateState.Text = tag == null
+                ? "Не удалось проверить: нет доступа к GitHub (или Windows не поддерживает TLS 1.2). Новые версии — " + Updater.ReleasesUrl
+                : "Установлена последняя версия — " + Updater.CurrentVersion + ".";
+            setPage.UpdateState.Invalidate();
+            if (page == 3) setPage.LayoutPage();
+        }
+
+        void RunUpdate()
+        {
+            if (updateTag == null || updating) return;
+            string ver = updateTag.TrimStart('v');
+            if (!ConfirmDialog.Ask(this, "Обновление", "Скачать и установить версию " + ver + "? Программа заменит свой exe рядом с собой и перезапустится. " +
+                                         "Папка с данными, реестр и карта не затрагиваются.", "Обновить")) return;
+            updating = true;
+            btnUpdate.Enabled = false;
+            btnUpdate.Text = "Скачиваю " + ver + "…";
+            string tag = updateTag, dir = s.BaseDir;
+            new Thread(() =>
+            {
+                string exe = null; Exception err = null;
+                try { exe = Updater.DownloadAndInstall(tag, dir); }
+                catch (Exception ex) { err = ex; }
+                BeginInvoke((MethodInvoker)(() =>
+                {
+                    updating = false;
+                    if (err != null)
+                    {
+                        btnUpdate.Enabled = true;
+                        btnUpdate.Text = "Обновить до " + ver;
+                        ConfirmDialog.Ask(this, "Обновление", "Не удалось обновить: " + err.Message + "\nТекущая версия осталась на месте. Новую можно скачать вручную: " + Updater.ReleasesUrl, "Понятно");
+                        return;
+                    }
+                    try { Process.Start(new ProcessStartInfo(exe, "/updated") { WorkingDirectory = dir, UseShellExecute = false }); }
+                    catch (Exception ex) { ConfirmDialog.Ask(this, "Обновление", "Версия " + ver + " установлена, но не запустилась сама: " + ex.Message + ". Запустите ven4PcConfig.exe заново.", "Понятно"); }
+                    Close();
+                }));
             }) { IsBackground = true }.Start();
         }
 
@@ -491,6 +581,8 @@ namespace PcInventory.Gui
                 new KvList.Row("Диски", r["DiskHealth"], r["DiskHealthSt"]),
             });
 
+            FillChanges();
+
             var others = s.Others();
             inDept.SetItems(Report.DeptOrder(others));
             inDept.Text = r["Dept"];
@@ -517,6 +609,43 @@ namespace PcInventory.Gui
             if (msgs.Count == 0) msgs.Add(new KvList.Row("", "Сведения собраны без ошибок.", Collector.Ok));
             adminHint = !admin;
             SetMessages(msgs);
+        }
+
+        /// <summary>Блок «Изменения с прошлого сбора»: что поменялось до сохранения, а после — последние записи истории.</summary>
+        void FillChanges()
+        {
+            var rows = new List<KvList.Row>();
+            var pending = s.PendingChanges();
+            var r = s.Current;
+            if (s.Prev == null)
+                rows.Add(new KvList.Row("", "Компьютер собирается впервые — изменения появятся при следующих сборах.", null));
+            else if (pending.Count > 0)
+            {
+                DateTime dt;
+                string since = DateTime.TryParseExact(s.Prev["Collected"], "yyyy-MM-dd HH:mm", null, System.Globalization.DateTimeStyles.None, out dt)
+                    ? dt.ToString("dd.MM.yyyy") : s.Prev["Collected"];
+                rows.Add(new KvList.Row("", "С прошлого сбора (" + since + "), сохранятся в историю вместе с реестром:", null));
+                AddChangeRows(rows, pending, 12);
+            }
+            else if (r != null && r.Changes.Count > 0)
+            {
+                rows.Add(new KvList.Row("", "С прошлого сбора ничего не изменилось. Последние записи истории:", null));
+                var last = r.Changes.GetRange(Math.Max(0, r.Changes.Count - 6), Math.Min(6, r.Changes.Count));
+                last.Reverse();
+                AddChangeRows(rows, last, 6);
+            }
+            else rows.Add(new KvList.Row("", "С прошлого сбора ничего не изменилось.", Collector.Ok));
+            kvChanges.Set(rows);
+        }
+
+        static void AddChangeRows(List<KvList.Row> rows, List<string[]> changes, int max)
+        {
+            for (int i = 0; i < changes.Count && i < max; i++)
+            {
+                var c = changes[i];
+                rows.Add(new KvList.Row(c[1], c[2] + ": " + c[3], c[1] == History.Removed ? "warn" : c[1] == History.Added ? Collector.Ok : null));
+            }
+            if (changes.Count > max) rows.Add(new KvList.Row("", "…и ещё " + (changes.Count - max) + " — полный список на листе «Изменения» в Excel", null));
         }
 
         static string FormatDate(string iso)
@@ -592,6 +721,8 @@ namespace PcInventory.Gui
             SetMessages(msgs);
             RefreshRegistry();
             RefreshRooms();
+            FillChanges();
+            LayoutPc();
         }
 
         // ================================================================ «Реестр»
@@ -601,6 +732,9 @@ namespace PcInventory.Gui
                 pgReg.Controls.Add(c);
             cardIssues.Controls.Add(kvIssues);
             cardTable.Controls.Add(table);
+            cardTable.Controls.Add(inSearch);
+            inSearch.Placeholder = "Поиск: ФИО, ПК, IP, программа…";
+            inSearch.Box.TextChanged += (o, e) => { FillTable(); LayoutRegistry(); };
             table.Headers = new[] { "№ АРМ", "Компьютер", "Отдел", "ФИО", "Собрано", "Замечания" };
             table.Px = new[] { 72, 150, 130, 210, 100, 0 }; // «DESKTOP-XXXXXXX» — 15 знаков полужирным
             btnOpen.Click += (o, e) => OpenFile(s.XlsxPath, "Реестр ещё не создан — сохраните хотя бы один компьютер.");
@@ -671,25 +805,40 @@ namespace PcInventory.Gui
             if (rows.Count == 0) rows.Add(new KvList.Row(all.Count == 0 ? "Реестр пуст" : "Замечаний нет", all.Count == 0 ? "" : "по всем " + all.Count + " компьютерам", Collector.Ok));
             kvIssues.Set(rows);
 
-            var sorted = Report.Sorted(all);
-            table.Rows.Clear();
-            table.RowGrades.Clear();
-            table.RowTips.Clear();
-            foreach (var r in sorted)
-            {
-                var probs = Report.ProblemsOf(r);
-                DateTime dt;
-                string coll = DateTime.TryParseExact(r["Collected"], "yyyy-MM-dd HH:mm", null, System.Globalization.DateTimeStyles.None, out dt) ? dt.ToString("dd.MM.yyyy") : r["Collected"];
-                string issues = probs.Count == 0 ? "нет" : probs[0] + (probs.Count > 1 ? " · ещё " + (probs.Count - 1) : "");
-                table.Rows.Add(new[] { r["ArmId"], r["PcName"], r["Dept"], r["Fio"], coll, issues });
-                table.RowGrades.Add(probs.Count == 0 ? Collector.Ok : Collector.Bad);
-                table.RowTips.Add(probs.Count > 1 ? "• " + string.Join("\n• ", probs.ToArray()) : null);
-            }
-            table.Invalidate();
+            FillTable();
             sideStatus.Count = all.Count;
             sideStatus.Invalidate();
             if (page == 1) LayoutRegistry();
             mapPage.Refresh0(false);
+        }
+
+        /// <summary>Таблица компьютеров с учётом строки поиска: ФИО, имя ПК, номер АРМ, IP, логин, отдел, кабинет
+        /// и установленные программы («где стоит AnyDesk»).</summary>
+        void FillTable()
+        {
+            string q = inSearch.Text.Trim();
+            var map = s.Map != null && s.Map.Floors.Count > 0 ? MapLayout.Resolve(s.Map, s.All) : null;
+            table.Rows.Clear();
+            table.RowGrades.Clear();
+            table.RowTips.Clear();
+            int shown = 0;
+            foreach (var r in Report.Sorted(s.All))
+            {
+                string viaProgram = null;
+                if (q != "" && !Report.Matches(r, q, map != null ? map.RoomTitle(map.RoomOfPc(r)) : "", out viaProgram)) continue;
+                shown++;
+                var probs = Report.ProblemsOf(r);
+                DateTime dt;
+                string coll = DateTime.TryParseExact(r["Collected"], "yyyy-MM-dd HH:mm", null, System.Globalization.DateTimeStyles.None, out dt) ? dt.ToString("dd.MM.yyyy") : r["Collected"];
+                string issues = viaProgram != null ? "найдено: " + viaProgram
+                    : probs.Count == 0 ? "нет" : probs[0] + (probs.Count > 1 ? " · ещё " + (probs.Count - 1) : "");
+                table.Rows.Add(new[] { r["ArmId"], r["PcName"], r["Dept"], r["Fio"], coll, issues });
+                table.RowGrades.Add(viaProgram != null ? "" : probs.Count == 0 ? Collector.Ok : Collector.Bad);
+                table.RowTips.Add(probs.Count > 0 && (probs.Count > 1 || viaProgram != null) ? "• " + string.Join("\n• ", probs.ToArray()) : null);
+            }
+            cardTable.Title = q == "" ? "Компьютеры" : "Компьютеры · найдено " + shown + " из " + s.All.Count;
+            cardTable.Invalidate();
+            table.Invalidate();
         }
 
         void LayoutRegistry()
@@ -718,6 +867,8 @@ namespace PcInventory.Gui
             cardIssues.SetBounds(pad, y, W, cardIssues.ContentTop + ih + cardIssues.Pad);
             y = cardIssues.Bottom + gap;
             int th = table.Measure();
+            int sw2 = Math.Min(Theme.S(320), inner / 2);
+            inSearch.SetBounds(cardTable.Width > 0 ? W - cardTable.Pad - sw2 : 0, Theme.S(10), sw2, Theme.S(32));
             table.SetBounds(cardTable.Pad, cardTable.ContentTop, inner, th);
             cardTable.SetBounds(pad, y, W, cardTable.ContentTop + th + cardTable.Pad);
             p.AutoScrollMinSize = new Size(0, cardTable.Bottom - sy + gap);
@@ -736,6 +887,7 @@ namespace PcInventory.Gui
             {
                 new KvList.Row("", "Способ активации Windows и Office, ключи продуктов и адреса серверов активации — только «активировано» или «нет».", Collector.Ok),
                 new KvList.Row("", "Пароли, переписка, файлы пользователей и история браузера не читаются.", Collector.Ok),
+                new KvList.Row("", "Сведения никуда не отправляются. В сеть программа обращается только за проверкой обновлений на GitHub — её можно выключить в «Настройках».", Collector.Ok),
                 new KvList.Row("", "ФИО, логин, IP и MAC в реестре — персональные данные: храните его как документ с ограниченным доступом.", "warn"),
             });
             kvModes.Set(new List<KvList.Row>

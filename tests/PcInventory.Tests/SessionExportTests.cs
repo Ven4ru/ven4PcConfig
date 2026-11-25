@@ -40,6 +40,11 @@ namespace PcInventory.Tests
             Assert.True(File.Exists(s.XlsxPath));
             // карта записана: кабинеты отделов остаются на своих местах при следующем запуске
             Assert.True(File.Exists(s.MapPath));
+            // карта и настройки лежат в папке данных, но компьютерами не считаются и ошибок чтения не дают
+            var again = new Session(s.BaseDir);
+            again.Load();
+            Assert.Empty(again.LoadErrors);
+            Assert.Equal(2, again.All.Count);
         }
 
         [Fact]
@@ -65,8 +70,8 @@ namespace PcInventory.Tests
             Assert.True(parts.ContainsKey("xl/media/image1.png"));
             Assert.True(parts.ContainsKey("xl/drawings/drawing1.xml"));
             Assert.True(parts.ContainsKey("xl/drawings/_rels/drawing1.xml.rels"));
-            Assert.True(parts.ContainsKey("xl/worksheets/_rels/sheet6.xml.rels"));
-            Assert.Contains("<drawing r:id=\"rId1\"/>", parts["xl/worksheets/sheet6.xml"]);
+            Assert.True(parts.ContainsKey("xl/worksheets/_rels/sheet7.xml.rels")); // 6 — «Изменения», 7 — «Карта»
+            Assert.Contains("<drawing r:id=\"rId1\"/>", parts["xl/worksheets/sheet7.xml"]);
             Assert.Contains("drawing+xml", parts["[Content_Types].xml"]);
             foreach (var kv in parts)
                 if (kv.Key.EndsWith(".xml") || kv.Key.EndsWith(".rels")) new XmlDocument().LoadXml(kv.Value);

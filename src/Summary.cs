@@ -69,6 +69,8 @@ namespace PcInventory
             new Check("Мало места на системном диске (меньше 10 % или 10 ГБ)", r =>
                 (Num(r["SysFreePct"]) >= 0 && Num(r["SysFreePct"]) < 10) || (Num(r["SysFreeGb"]) >= 0 && Num(r["SysFreeGb"]) < 10)),
             new Check("ОЗУ меньше 8 ГБ", r => RamGb(r) > 0 && RamGb(r) < 8),
+            new Check(ForbiddenCheck, r => Rules.FoundForbidden(r).Count > 0),
+            new Check(RequiredCheck, r => Rules.MissingRequired(r).Count > 0),
             new Check("Сбор сведений прошёл с ошибками (часть ячеек может быть пустой)", r => r["CollectErrors"] != ""),
             new Check("Сведения устарели (собраны более 90 дней назад)", r =>
             {
@@ -77,16 +79,29 @@ namespace PcInventory
             }),
         };
 
+        const string ForbiddenCheck = "Установлены запрещённые программы (список — в «Настройках»)";
+        const string RequiredCheck = "Нет обязательных программ (список — в «Настройках»)";
+
+        /// <summary>Списки запрещённых и обязательных программ. Ставит сессия после чтения настроек;
+        /// до этого действуют примеры по умолчанию.</summary>
+        public static AppSettings Rules = new AppSettings();
+
         static int Problems(PcRecord r) => ProblemsOf(r).Count;
 
         /// <summary>Проверки листа «Сводка» — их же показывает окно на странице «Реестр».</summary>
         public static Check[] CheckList() => Checks;
 
-        /// <summary>Короткие названия замечаний для одного ПК.</summary>
+        /// <summary>Короткие названия замечаний для одного ПК (у контроля программ — с названиями программ).</summary>
         public static List<string> ProblemsOf(PcRecord r)
         {
             var list = new List<string>();
-            foreach (var c in Checks) if (c.Hit(r)) list.Add(ShortName(c.Name));
+            foreach (var c in Checks)
+            {
+                if (!c.Hit(r)) continue;
+                if (c.Name == ForbiddenCheck) list.Add("запрещённые программы: " + string.Join(", ", Rules.FoundForbidden(r).ToArray()));
+                else if (c.Name == RequiredCheck) list.Add("нет программ: " + string.Join(", ", Rules.MissingRequired(r).ToArray()));
+                else list.Add(ShortName(c.Name));
+            }
             return list;
         }
 
@@ -94,6 +109,18 @@ namespace PcInventory
         {
             int p = name.IndexOf(" (", StringComparison.Ordinal);
             return p > 0 ? name.Substring(0, p) : name;
+        }
+
+        /// <summary>Поиск в окне: ФИО, имя ПК, номер АРМ, IP, MAC, логин, отдел, кабинет; если не нашлось —
+        /// установленные программы (тогда viaProgram — какая программа совпала).</summary>
+        public static bool Matches(PcRecord r, string q, string room, out string viaProgram)
+        {
+            viaProgram = null;
+            foreach (var v in new[] { r["PcName"], r["Fio"], r["ArmId"], r["Ip"], r["Mac"], r["User"], r["Dept"], room ?? "" })
+                if (v.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
+            foreach (var s in r.Soft)
+                if (s[0].IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) { viaProgram = s[0] + (s[1] != "" ? " " + s[1] : ""); return true; }
+            return false;
         }
 
         /// <summary>«1.2 BUH-03» — номер АРМ и имя ПК без ФИО (для коротких списков).</summary>

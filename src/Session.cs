@@ -44,6 +44,7 @@ namespace PcInventory
             All = Store.LoadAll(LoadErrors);
             Map = MapDoc.Load(MapPath, out MapError);
             Settings = AppSettings.Load(SettingsPath);
+            Report.Rules = Settings;
         }
 
         /// <summary>Раскладка карты по текущим данным. Новые кабинеты отделов сразу записываются в карту,
@@ -72,7 +73,7 @@ namespace PcInventory
 
         public void SaveMap() { if (!ReadOnly) Map.Save(MapPath); }
 
-        public void SaveSettings() { if (!ReadOnly) Settings.Save(SettingsPath); }
+        public void SaveSettings() { Report.Rules = Settings; if (!ReadOnly) Settings.Save(SettingsPath); }
 
         /// <summary>Сохранить запись другого ПК (например, перетащили на карте в другой кабинет).</summary>
         public void SaveRecord(PcRecord r) { if (!ReadOnly) Store.Save(r); }
@@ -127,6 +128,7 @@ namespace PcInventory
             foreach (var k in new[] { "Dept", "ArmId", "Fio", "Note", "RoomId" })
                 rec[k] = prev != null ? prev[k] : "";
             if (prev == null && rec["Fio"] == "") rec["Fio"] = rec["UserFullName"];
+            if (prev != null) rec.Changes.AddRange(prev.Changes); // история переходит к новой записи
 
             // Ошибки сбора: разделы (col.Errors) и отдельные запросы WMI (Wmi.Errors) — иначе пустые ячейки без объяснения
             CollectErrors.Clear();
@@ -148,9 +150,15 @@ namespace PcInventory
             return false;
         }
 
-        /// <summary>Сохраняет запись этого ПК; в реестре она заменяет прежнюю.</summary>
+        /// <summary>Что изменилось с прошлого сбора этого ПК (ещё не сохранено). Пусто — первый сбор или изменений нет.</summary>
+        public List<string[]> PendingChanges() =>
+            Current == null || Prev == null || Prev == Current ? new List<string[]>() : History.Diff(Prev, Current, Current["Collected"]);
+
+        /// <summary>Сохраняет запись этого ПК; в реестре она заменяет прежнюю. Изменения с прошлого сбора
+        /// дописываются в историю.</summary>
         public string SaveCurrent()
         {
+            History.Append(Current, PendingChanges());
             string saved = Store.Save(Current);
             var others = Others();
             others.Add(Current);

@@ -179,6 +179,13 @@ namespace PcInventory.Gui
                 new KvList.Row("Замечания", string.Join("\n", Report.ProblemsOf(r).ToArray()), Report.ProblemsOf(r).Count > 0 ? Collector.Bad : Collector.Ok),
                 new KvList.Row("Собрано", r["Collected"], null),
             };
+            // последние изменения из истории, новые сверху
+            for (int i = r.Changes.Count - 1, n = 0; i >= 0 && n < 8; i--, n++)
+            {
+                var c = r.Changes[i];
+                rows.Add(new KvList.Row(n == 0 ? "Изменения" : "", c[0] + " · " + c[1] + " · " + c[2] + ": " + c[3],
+                    c[1] == History.Removed ? "warn" : c[1] == History.Added ? Collector.Ok : null));
+            }
             rows.RemoveAll(x => x.Value == "");
             kv.Set(rows);
             int w = Theme.S(720);

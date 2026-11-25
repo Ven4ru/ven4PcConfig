@@ -9,7 +9,7 @@ namespace PcInventory
         public const string XlsxName = "Реестр_АРМ.xlsx";
         public const string DataDirName = "ven4PcConfig_данные";
 
-        public static readonly string Version = "1.3.0";
+        public static readonly string Version = "1.4.0";
 
         [STAThread]
         static int Main(string[] args)
@@ -324,7 +324,22 @@ namespace PcInventory
                     }
                 }
 
-            var sheets = new List<XSheet> { Summary(order, groups), main, lic, parts, soft };
+            // --- Изменения: история по всем ПК, новые сверху
+            var chg = new XSheet { Name = "Изменения", Widths = new double[] { 16, 18, 34, 12, 16, 80 } };
+            chg.Rows.Add(HeaderRow(new[] { "Дата сбора", "Отдел", "ПК", "Изменение", "Что", "Подробности" }));
+            var allChanges = new List<KeyValuePair<PcRecord, string[]>>();
+            foreach (var g in groups) foreach (var r in g) foreach (var c in r.Changes) allChanges.Add(new KeyValuePair<PcRecord, string[]>(r, c));
+            allChanges.Sort((a, b) => string.CompareOrdinal(b.Value[0], a.Value[0]));
+            foreach (var kv in allChanges)
+            {
+                object d = kv.Value[0];
+                DateTime dt;
+                if (DateTime.TryParseExact(kv.Value[0], "yyyy-MM-dd HH:mm", null, System.Globalization.DateTimeStyles.None, out dt)) d = dt;
+                int st = kv.Value[1] == History.Removed ? Xlsx.Bad : kv.Value[1] == History.Added ? Xlsx.Good : Xlsx.Text;
+                chg.Rows.Add(new[] { new XCell(d, Xlsx.DateTimeSt), T(kv.Key["Dept"]), T(Title(kv.Key)), new XCell(kv.Value[1], st), T(kv.Value[2]), T(kv.Value[3]) });
+            }
+
+            var sheets = new List<XSheet> { Summary(order, groups), main, lic, parts, soft, chg };
             if (mapSheet && map != null) sheets.Add(MapSheet(map, mapDir));
             return Xlsx.Build(sheets);
         }

@@ -284,6 +284,22 @@ namespace PcInventory.Gui
 
         public override string Text { get => Box.Text; set => Box.Text = value ?? ""; }
 
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, string l);
+        string placeholder;
+
+        /// <summary>Серая подсказка в пустом поле (EM_SETCUEBANNER, Windows XP+).</summary>
+        public string Placeholder
+        {
+            get => placeholder;
+            set
+            {
+                placeholder = value;
+                if (Box.IsHandleCreated) SendMessage(Box.Handle, 0x1501, (IntPtr)1, value ?? "");
+                else Box.HandleCreated += (s, e) => SendMessage(Box.Handle, 0x1501, (IntPtr)1, placeholder ?? "");
+            }
+        }
+
         public void SetItems(List<string> items)
         {
             if (menu == null) return;

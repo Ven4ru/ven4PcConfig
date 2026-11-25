@@ -51,6 +51,20 @@ namespace PcInventory.Gui
             s.Prev = cur;
             s.ReadOnly = true;
 
+            // история изменений и программы для контроля (снимки разделов «Этот компьютер» и «Реестр»)
+            string d1 = DateTime.Now.AddDays(-35).ToString("yyyy-MM-dd HH:mm"), d2 = DateTime.Now.AddDays(-3).ToString("yyyy-MM-dd HH:mm");
+            cur.Changes.Add(new[] { d1, History.Changed, "ОС", "Windows 11 Pro 23H2 → Windows 11 Pro 24H2" });
+            cur.Changes.Add(new[] { d2, History.Added, "Накопитель", "WDC WD10EZEX-08WN4A0 (с/н WD-WCC6Y4KJ2X1)" });
+            cur.Changes.Add(new[] { d2, History.Removed, "ОЗУ", "Kingston 4 ГБ DDR4 2666 (с/н 7A1B2C3D)" });
+            cur.Changes.Add(new[] { d2, History.Added, "ОЗУ", "Kingston 8 ГБ DDR4 2666 (с/н 9F8E7D6C)" });
+            cur.Changes.Add(new[] { d2, History.Added, "Программа", "Telegram Desktop 5.8" });
+            foreach (var r in s.All)
+            {
+                r.Soft.Add(new[] { "7-Zip 24.08 (x64)", "24.08", "Igor Pavlov", "", Collector.AllUsers });
+                if (r.Key == "SKLAD-02") r.Soft.Add(new[] { "qBittorrent 5.0.2", "5.0.2", "The qBittorrent project", "", Collector.AllUsers });
+                if (r.Key == "BUH-02") r.Soft.Add(new[] { "AnyDesk", "9.0.4", "AnyDesk Software GmbH", "", Collector.AllUsers });
+            }
+
             // принтеры: общий сетевой в бухгалтерии, локальный в кадрах, сетевой по IP на складе
             foreach (var r in s.All)
             {
