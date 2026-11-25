@@ -161,36 +161,15 @@ namespace PcInventory
                 g.Clip = old;
                 using (var pen = new Pen(border, selected || current ? 2f : 1f)) g.DrawPath(pen, path);
             }
-            var icon = new Rectangle(rect.X + 10, rect.Y + 10, 22, 20);
-            if (i.IsPc) DrawPcIcon(g, icon, p.Icon); else DrawPrinterIcon(g, icon, p.Icon);
+            g.DrawImage(Icons.Get(Icons.KindOf(i)), new Rectangle(rect.X + 9, rect.Y + 8, 30, 30));
             var sf = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter };
             using (var b = new SolidBrush(p.ItemText))
-                g.DrawString(i.Line1, FItem, b, new RectangleF(rect.X + 38, rect.Y + 9, rect.Width - 44, 16), sf);
+                g.DrawString(i.Line1, FItem, b, new RectangleF(rect.X + 44, rect.Y + 9, rect.Width - 50, 16), sf);
             using (var b = new SolidBrush(p.ItemSub))
-                g.DrawString(i.Line2, FItemSub, b, new RectangleF(rect.X + 38, rect.Y + 27, rect.Width - 44, 16), sf);
+                g.DrawString(i.Line2, FItemSub, b, new RectangleF(rect.X + 44, rect.Y + 27, rect.Width - 50, 16), sf);
             if (i.IsPc && i.Pc["Dept"] != "" && i.Room != null && !string.Equals(i.Room.Dept, i.Pc["Dept"], StringComparison.OrdinalIgnoreCase))
                 using (var b = new SolidBrush(p.ItemSub))
                     g.DrawString(i.Pc["Dept"], FItemSub, b, new RectangleF(rect.X + 10, rect.Y + 44, rect.Width - 16, 16), sf);
-        }
-
-        static void DrawPcIcon(Graphics g, Rectangle r, Color c)
-        {
-            using (var pen = new Pen(c, 1.6f))
-            {
-                g.DrawRectangle(pen, r.X + 1, r.Y + 1, r.Width - 2, r.Height - 7);
-                g.DrawLine(pen, r.X + r.Width / 2f, r.Bottom - 6, r.X + r.Width / 2f, r.Bottom - 2);
-                g.DrawLine(pen, r.X + 5, r.Bottom - 1, r.Right - 5, r.Bottom - 1);
-            }
-        }
-
-        static void DrawPrinterIcon(Graphics g, Rectangle r, Color c)
-        {
-            using (var pen = new Pen(c, 1.6f))
-            {
-                g.DrawRectangle(pen, r.X + 5, r.Y + 1, r.Width - 10, 5);                // бумага сверху
-                g.DrawRectangle(pen, r.X + 1, r.Y + 6, r.Width - 2, r.Height - 11);      // корпус
-                g.DrawRectangle(pen, r.X + 5, r.Bottom - 7, r.Width - 10, 6);            // лист снизу
-            }
         }
 
         static GraphicsPath Round(Rectangle r, int radius)

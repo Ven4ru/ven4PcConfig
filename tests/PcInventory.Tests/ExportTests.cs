@@ -76,7 +76,8 @@ namespace PcInventory.Tests
             var parts = Unzip(VsdxWriter.Build(m, dir));
             foreach (var name in new[] { "[Content_Types].xml", "_rels/.rels", "docProps/core.xml", "docProps/app.xml", "visio/document.xml",
                                          "visio/_rels/document.xml.rels", "visio/windows.xml", "visio/pages/pages.xml", "visio/pages/_rels/pages.xml.rels",
-                                         "visio/pages/page1.xml", "visio/pages/page2.xml", "visio/media/image2.png", "visio/pages/_rels/page2.xml.rels" })
+                                         "visio/pages/page1.xml", "visio/pages/page2.xml", "visio/media/image2.png", "visio/pages/_rels/page2.xml.rels",
+                                         "visio/pages/_rels/page1.xml.rels", "visio/media/icon-pc-ok.png", "visio/media/icon-printer.png" })
                 Assert.True(parts.ContainsKey(name), "нет части " + name);
             foreach (var kv in parts)
                 if (kv.Key.EndsWith(".xml") || kv.Key.EndsWith(".rels")) Xml(kv.Value);

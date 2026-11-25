@@ -55,6 +55,44 @@ namespace PcInventory
         }
     }
 
+    /// <summary>Подсказка к значку (окно, Visio, draw.io): имя и главные характеристики.</summary>
+    static class MapText
+    {
+        public static string Tooltip(MapItem it)
+        {
+            var lines = new List<string>();
+            if (it.IsPc)
+            {
+                var r = it.Pc;
+                lines.Add(Report.ShortTitle(r) + (r["Fio"] != "" ? " — " + r["Fio"] : ""));
+                foreach (var kv in new[] { new[] { "Отдел", r["Dept"] }, new[] { "Процессор", r["Cpu"] }, new[] { "ОЗУ", r["Ram"] },
+                                           new[] { "Накопители", r["Disk"].Replace("\n", "; ") }, new[] { "ОС", Util.Join(" ", new[] { r["Os"], r["OsVer"] }) },
+                                           new[] { "IP", r["Ip"].Replace("\n", ", ") }, new[] { "Пользователь", r["User"] } })
+                    if (kv[1] != "") lines.Add(kv[0] + ": " + kv[1]);
+                var probs = Report.ProblemsOf(r);
+                lines.Add(probs.Count == 0 ? "Замечаний нет" : "Замечания: " + string.Join("; ", probs.ToArray()));
+            }
+            else
+            {
+                var p = it.Printer;
+                lines.Add(p.Name + (p.Network ? " (сетевой)" : ""));
+                if (p.Driver != "") lines.Add("Драйвер: " + p.Driver);
+                if (p.Port != "") lines.Add("Порт: " + p.Port);
+                var pcs = new List<string>();
+                foreach (var pc in p.Pcs) pcs.Add(Report.ShortTitle(pc));
+                lines.Add("Компьютеры: " + string.Join(", ", pcs.ToArray()));
+            }
+            return string.Join("\n", lines.ToArray());
+        }
+
+        /// <summary>Квадрат значка внутри места значка (для выгрузок, где подписи нет — только картинка).</summary>
+        public static Rectangle IconRect(MapItem it)
+        {
+            int s = it.Rect.Height;
+            return new Rectangle(it.Rect.X + (it.Rect.Width - s) / 2, it.Rect.Y, s, s);
+        }
+    }
+
     /// <summary>
     /// Раскладка карты: в какой кабинет попадает каждый ПК и принтер и где стоит его значок.
     /// Кабинеты для отделов без своего кабинета создаются автоматически (Auto) на первом этаже.

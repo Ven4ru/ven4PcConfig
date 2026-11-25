@@ -38,7 +38,7 @@ namespace PcInventory
             ct.Append("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">");
             ct.Append("<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>");
             ct.Append("<Default Extension=\"xml\" ContentType=\"application/xml\"/>");
-            if (bgs.Count > 0) ct.Append("<Default Extension=\"png\" ContentType=\"image/png\"/>");
+            ct.Append("<Default Extension=\"png\" ContentType=\"image/png\"/>"); // подложки и значки
             ct.Append("<Override PartName=\"/visio/document.xml\" ContentType=\"application/vnd.ms-visio.drawing.main+xml\"/>");
             ct.Append("<Override PartName=\"/visio/pages/pages.xml\" ContentType=\"application/vnd.ms-visio.pages+xml\"/>");
             for (int i = 0; i < floors.Count; i++)
@@ -75,6 +75,7 @@ namespace PcInventory
 
             var pages = new StringBuilder(Head);
             pages.Append("<Pages xmlns=\"" + NsV + "\" xmlns:r=\"" + NsR + "\" xml:space=\"preserve\">");
+            var media = new Dictionary<string, bool>();
             var prel = new StringBuilder(Head);
             prel.Append("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">");
             for (int i = 0; i < floors.Count; i++)
@@ -99,15 +100,28 @@ namespace PcInventory
 
                 byte[] bg;
                 bgs.TryGetValue(i, out bg);
-                zip.Add("visio/pages/page" + (i + 1) + ".xml", Page(m, f, bg != null));
+                // связи страницы: подложка (rId1) и по одной картинке на каждый вид значка
+                var rels = new StringBuilder();
+                const string ImgRel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
                 if (bg != null)
                 {
                     zip.Add("visio/media/image" + (i + 1) + ".png", bg);
-                    zip.Add("visio/pages/_rels/page" + (i + 1) + ".xml.rels", Head +
-                        "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" +
-                        "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/image" + (i + 1) + ".png\"/>" +
-                        "</Relationships>");
+                    rels.Append("<Relationship Id=\"rId1\" Type=\"" + ImgRel + "\" Target=\"../media/image" + (i + 1) + ".png\"/>");
                 }
+                var iconRel = new Dictionary<string, string>();
+                foreach (var it in m.ItemsOn(f))
+                {
+                    string kind = Icons.KindOf(it);
+                    if (iconRel.ContainsKey(kind)) continue;
+                    string rid = "rId" + (iconRel.Count + 2);
+                    iconRel[kind] = rid;
+                    if (!media.ContainsKey(kind)) { media[kind] = true; zip.Add("visio/media/icon-" + kind + ".png", Icons.Png(kind, P.Room)); }
+                    rels.Append("<Relationship Id=\"" + rid + "\" Type=\"" + ImgRel + "\" Target=\"../media/icon-" + kind + ".png\"/>");
+                }
+                zip.Add("visio/pages/page" + (i + 1) + ".xml", Page(m, f, bg != null, iconRel));
+                if (rels.Length > 0)
+                    zip.Add("visio/pages/_rels/page" + (i + 1) + ".xml.rels", Head +
+                        "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" + rels + "</Relationships>");
             }
             pages.Append("</Pages>");
             prel.Append("</Relationships>");
@@ -184,7 +198,7 @@ namespace PcInventory
         }
 
         // ------------------------------------------------------------ страница
-        static string Page(ResolvedMap m, Floor f, bool hasBg)
+        static string Page(ResolvedMap m, Floor f, bool hasBg, Dictionary<string, string> iconRel)
         {
             var sb = new StringBuilder(Head);
             sb.Append("<PageContents xmlns=\"" + NsV + "\" xmlns:r=\"" + NsR + "\" xml:space=\"preserve\"><Shapes>");
@@ -212,19 +226,20 @@ namespace PcInventory
                 sb.Append("<Text>" + Esc(r.Name + (r.Dept != "" && !string.Equals(r.Dept, r.Name, StringComparison.OrdinalIgnoreCase) ? " · " + r.Dept : "")) + "</Text>");
                 sb.Append("</Shape>");
             }
+            // ПК и принтер — картинка-значок без подписи; имя и характеристики — во всплывающей подсказке (Comment)
+            // и в «Данных фигуры»
             foreach (var i in m.ItemsOn(f))
             {
-                Color stripe = i.IsPc ? (i.Grade == Collector.Bad ? P.Bad : P.Ok) : P.Printer;
-                sb.Append("<Shape ID=\"" + id + "\" NameU=\"" + (i.IsPc ? "PC" : "Printer") + "." + id++ + "\" Name=\"" + Esc(i.Line1) + "\" Type=\"Shape\" LineStyle=\"0\" FillStyle=\"0\" TextStyle=\"0\">");
-                sb.Append(Xform(f, i.Rect));
-                sb.Append(CS("FillForegnd", Hex(P.Item)) + CS("LineColor", Hex(stripe)) + C("LineWeight", 0.0208333) + C("Rounding", 0.05) +
-                          C("VerticalAlign", 0) + C("TopMargin", 0.07) + C("LeftMargin", 0.4) + C("RightMargin", 0.04) + CS("LayerMember", "2"));
-                sb.Append("<Section N=\"Character\"><Row IX=\"0\">" + CS("Font", "Segoe UI") + CS("Color", Hex(P.ItemText)) + C("Size", 0.105) + "</Row></Section>");
-                sb.Append("<Section N=\"Paragraph\"><Row IX=\"0\">" + C("HorzAlign", 0) + "</Row></Section>");
+                var r = MapText.IconRect(i);
+                sb.Append("<Shape ID=\"" + id + "\" NameU=\"" + (i.IsPc ? "PC" : "Printer") + "." + id++ + "\" Name=\"" + Esc(i.Line1) + "\" Type=\"Foreign\" LineStyle=\"0\" FillStyle=\"0\" TextStyle=\"0\">");
+                sb.Append(Xform(f, r));
+                sb.Append(C("ImgOffsetX", 0) + C("ImgOffsetY", 0) + C("ImgWidth", r.Width / Px) + C("ImgHeight", r.Height / Px) +
+                          // заливка и рамка — цветом кабинета: программы, которые не умеют «без заливки» у картинки, не рисуют квадрат
+                          CS("FillForegnd", Hex(P.Room)) + CS("FillBkgnd", Hex(P.Room)) + CS("LineColor", Hex(P.Room)) +
+                          C("LinePattern", 0) + C("FillPattern", 0) + CS("LayerMember", "2") + CS("Comment", MapText.Tooltip(i)) + C("LockAspect", 1));
                 sb.Append(Props(i.IsPc ? PcProps(m, i.Pc) : PrinterProps(i.Printer)));
-                sb.Append(Rect());
-                sb.Append(i.IsPc ? PcIcon(i.Rect.Height) : PrinterIcon(i.Rect.Height));
-                sb.Append("<Text>" + Esc(Util.Join("\n", new[] { i.Line1, i.Line2 })) + "</Text>");
+                sb.Append(Rect(true)); // контур картинки без заливки и линии — иначе вокруг значка рисуется квадрат
+                sb.Append("<ForeignData ForeignType=\"Bitmap\" CompressionType=\"PNG\"><Rel r:id=\"" + iconRel[Icons.KindOf(i)] + "\"/></ForeignData>");
                 sb.Append("</Shape>");
             }
             sb.Append("</Shapes></PageContents>");
@@ -278,32 +293,13 @@ namespace PcInventory
         }
 
         /// <summary>Прямоугольник в относительных координатах — растягивается вместе с фигурой.</summary>
-        static string Rect() =>
-            "<Section N=\"Geometry\" IX=\"0\">" + C("NoFill", 0) + C("NoLine", 0) + C("NoShow", 0) + C("NoSnap", 0) + C("NoQuickDrag", 0) +
+        static string Rect(bool hidden = false) =>
+            "<Section N=\"Geometry\" IX=\"0\">" + C("NoFill", hidden ? 1 : 0) + C("NoLine", hidden ? 1 : 0) + C("NoShow", 0) + C("NoSnap", 0) + C("NoQuickDrag", 0) +
             "<Row T=\"RelMoveTo\" IX=\"1\">" + C("X", 0) + C("Y", 0) + "</Row>" +
             "<Row T=\"RelLineTo\" IX=\"2\">" + C("X", 1) + C("Y", 0) + "</Row>" +
             "<Row T=\"RelLineTo\" IX=\"3\">" + C("X", 1) + C("Y", 1) + "</Row>" +
             "<Row T=\"RelLineTo\" IX=\"4\">" + C("X", 0) + C("Y", 1) + "</Row>" +
             "<Row T=\"RelLineTo\" IX=\"5\">" + C("X", 0) + C("Y", 0) + "</Row></Section>";
-
-        // ------------------------------------------------------------ значки: те же линии, что рисует программа (MapRenderer),
-        // в координатах фигуры (дюймы от левого нижнего угла), без заливки — цвет линий как у рамки
-        static string PcIcon(int h) =>
-            GeoRect(1, 11, 11, 31, 24, h) + GeoLine(2, 21, 24, 21, 28, h) + GeoLine(3, 15, 29, 27, 29, h);
-
-        static string PrinterIcon(int h) =>
-            GeoRect(1, 15, 11, 27, 16, h) + GeoRect(2, 11, 16, 31, 25, h) + GeoRect(3, 15, 23, 27, 29, h);
-
-        static string GeoRect(int ix, int x1, int y1, int x2, int y2, int h) =>
-            "<Section N=\"Geometry\" IX=\"" + ix + "\">" + C("NoFill", 1) + C("NoLine", 0) + C("NoShow", 0) + C("NoSnap", 0) + C("NoQuickDrag", 0) +
-            Pt("MoveTo", 1, x1, y1, h) + Pt("LineTo", 2, x2, y1, h) + Pt("LineTo", 3, x2, y2, h) + Pt("LineTo", 4, x1, y2, h) + Pt("LineTo", 5, x1, y1, h) + "</Section>";
-
-        static string GeoLine(int ix, int x1, int y1, int x2, int y2, int h) =>
-            "<Section N=\"Geometry\" IX=\"" + ix + "\">" + C("NoFill", 1) + C("NoLine", 0) + C("NoShow", 0) + C("NoSnap", 0) + C("NoQuickDrag", 0) +
-            Pt("MoveTo", 1, x1, y1, h) + Pt("LineTo", 2, x2, y2, h) + "</Section>";
-
-        static string Pt(string t, int ix, int x, int y, int h) =>
-            "<Row T=\"" + t + "\" IX=\"" + ix + "\">" + C("X", x / Px) + C("Y", (h - y) / Px) + "</Row>";
 
         static string C(string n, double v, string unit = null) =>
             "<Cell N=\"" + n + "\" V=\"" + D(v) + "\"" + (unit != null ? " U=\"" + unit + "\"" : "") + "/>";

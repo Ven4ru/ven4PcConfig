@@ -236,7 +236,7 @@ namespace PcInventory.Gui
                 if (h != hover)
                 {
                     hover = h;
-                    if (it != null) tip.SetToolTip(this, Tip(it)); else tip.SetToolTip(this, null);
+                    if (it != null) tip.SetToolTip(this, MapText.Tooltip(it)); else tip.SetToolTip(this, null);
                     Invalidate();
                 }
                 return;
@@ -335,33 +335,6 @@ namespace PcInventory.Gui
         {
             base.OnMouseLeave(e);
             if (hover != null) { hover = null; Invalidate(); }
-        }
-
-        static string Tip(MapItem it)
-        {
-            var lines = new List<string>();
-            if (it.IsPc)
-            {
-                var r = it.Pc;
-                lines.Add(Report.ShortTitle(r) + (r["Fio"] != "" ? " — " + r["Fio"] : ""));
-                foreach (var kv in new[] { new[] { "Процессор", r["Cpu"] }, new[] { "ОЗУ", r["Ram"] }, new[] { "Накопители", r["Disk"].Replace("\n", "; ") },
-                                           new[] { "ОС", Util.Join(" ", new[] { r["Os"], r["OsVer"] }) }, new[] { "IP", r["Ip"].Replace("\n", ", ") },
-                                           new[] { "Пользователь", r["User"] } })
-                    if (kv[1] != "") lines.Add(kv[0] + ": " + kv[1]);
-                var probs = Report.ProblemsOf(r);
-                lines.Add(probs.Count == 0 ? "Замечаний нет" : "Замечания: " + string.Join("; ", probs.ToArray()));
-            }
-            else
-            {
-                var p = it.Printer;
-                lines.Add(p.Name + (p.Network ? " (сетевой)" : ""));
-                if (p.Driver != "") lines.Add("Драйвер: " + p.Driver);
-                if (p.Port != "") lines.Add("Порт: " + p.Port);
-                var pcs = new List<string>();
-                foreach (var pc in p.Pcs) pcs.Add(Report.ShortTitle(pc));
-                lines.Add("Компьютеры: " + string.Join(", ", pcs.ToArray()));
-            }
-            return string.Join("\n", lines.ToArray());
         }
 
         protected override void Dispose(bool disposing)

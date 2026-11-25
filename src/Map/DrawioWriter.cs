@@ -48,15 +48,13 @@ namespace PcInventory
                 foreach (var i in m.ItemsOn(f))
                 {
                     var rows = i.IsPc ? VsdxWriter.PcProps(m, i.Pc) : VsdxWriter.PrinterProps(i.Printer);
-                    Color stripe = i.IsPc ? (i.Grade == Collector.Bad ? P.Bad : P.Ok) : P.Printer;
-                    string label = Html(i.Line1) + (i.Line2 != "" ? "<br><span style=\"color:" + Hex(P.ItemSub) + "\">" + Html(i.Line2) + "</span>" : "");
-                    sb.Append("<object id=\"item" + (fi + 1) + "_" + (++n) + "\" label=\"" + Esc(label) + "\" tooltip=\"" + Esc(Tooltip(rows)) + "\"");
+                    // значок-картинка без подписи; имя и характеристики — в подсказке и в «Edit Data»
+                    sb.Append("<object id=\"item" + (fi + 1) + "_" + (++n) + "\" label=\"\" tooltip=\"" + Esc(MapText.Tooltip(i)) + "\"");
                     foreach (var row in rows) sb.Append(Attr(row[1], row[2]));
-                    // shape=label — фигура draw.io со значком слева (как в программе)
-                    sb.Append("><mxCell style=\"shape=label;rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=34;fontSize=11;" +
-                              "image=data:image/svg+xml," + Icon(i.IsPc, stripe) + ";imageWidth=24;imageHeight=22;imageAlign=left;imageVerticalAlign=middle;" +
-                              "fillColor=" + Hex(P.Item) + ";strokeColor=" + Hex(stripe) + ";strokeWidth=2;fontColor=" + Hex(P.ItemText) + ";\" vertex=\"1\" parent=\"" + Esc(i.Room.Id) + "\">");
-                    sb.Append(Geo(i.Rect.X - i.Room.X, i.Rect.Y - i.Room.Y, i.Rect.Width, i.Rect.Height) + "</mxCell></object>");
+                    sb.Append("><mxCell style=\"shape=image;imageAspect=1;aspect=fixed;image=data:image/png," +
+                              Convert.ToBase64String(Icons.Png(Icons.KindOf(i))) + ";\" vertex=\"1\" parent=\"" + Esc(i.Room.Id) + "\">");
+                    var ir = MapText.IconRect(i);
+                    sb.Append(Geo(ir.X - i.Room.X, ir.Y - i.Room.Y, ir.Width, ir.Height) + "</mxCell></object>");
                 }
                 sb.Append("</root></mxGraphModel></diagram>\n");
             }
@@ -64,23 +62,6 @@ namespace PcInventory
             return sb.ToString();
         }
 
-        /// <summary>Значок ПК или принтера — SVG в base64 (draw.io пишет «data:image/svg+xml,&lt;base64&gt;»).</summary>
-        static string Icon(bool pc, Color c)
-        {
-            string st = "fill='none' stroke='" + Hex(c) + "' stroke-width='1.6'";
-            string body = pc
-                ? "<rect x='1' y='1' width='20' height='13' " + st + "/><path d='M11 14v4M5 19h12' " + st + "/>"
-                : "<rect x='5' y='1' width='12' height='5' " + st + "/><rect x='1' y='6' width='20' height='9' " + st + "/><rect x='5' y='13' width='12' height='6' " + st + "/>";
-            string svg = "<svg xmlns='http://www.w3.org/2000/svg' width='22' height='20' viewBox='0 0 22 20'>" + body + "</svg>";
-            return Convert.ToBase64String(Encoding.UTF8.GetBytes(svg));
-        }
-
-        static string Tooltip(string[][] rows)
-        {
-            var sb = new StringBuilder();
-            foreach (var r in rows) if (r[2] != "") sb.Append(r[1] + ": " + r[2].Replace("\n", "; ") + "\n");
-            return sb.ToString().TrimEnd('\n');
-        }
 
         /// <summary>Атрибут object: имя — подпись без пробелов и точек («Номер_АРМ»), значение — в одну строку.</summary>
         static string Attr(string name, string value)

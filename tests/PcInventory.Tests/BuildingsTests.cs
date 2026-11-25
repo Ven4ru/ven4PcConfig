@@ -100,11 +100,17 @@ namespace PcInventory.Tests
                     if (e.FullName.EndsWith("pages.xml")) pages = x; else page3 = x;
                 }
             Assert.NotNull(pages.SelectSingleNode("//v:Page[@Name='Склад · 1 этаж']", ns));
-            // у значка ПК, кроме рамки (Geometry IX=0), есть линии значка (IX=1..3)
-            var pc = page3.SelectSingleNode("//v:Shape[starts-with(@NameU,'PC.')]", ns);
-            Assert.Equal(4, pc.SelectNodes("v:Section[@N='Geometry']", ns).Count);
-            var pr = page3.SelectSingleNode("//v:Shape[starts-with(@NameU,'Printer.')]", ns);
-            Assert.Equal(4, pr.SelectNodes("v:Section[@N='Geometry']", ns).Count);
+            // ПК и принтер — картинки-значки без подписи; имя и характеристики — в подсказке (Comment) и «Данных фигуры»
+            foreach (var prefix in new[] { "PC.", "Printer." })
+            {
+                var sh = (XmlElement)page3.SelectSingleNode("//v:Shape[starts-with(@NameU,'" + prefix + "')]", ns);
+                Assert.Equal("Foreign", sh.GetAttribute("Type"));
+                Assert.NotNull(sh.SelectSingleNode("v:ForeignData/v:Rel", ns));
+                Assert.Null(sh.SelectSingleNode("v:Text", ns));
+                var comment = (XmlElement)sh.SelectSingleNode("v:Cell[@N='Comment']", ns);
+                Assert.Contains(prefix == "PC." ? "A" : "Canon", comment.GetAttribute("V"));
+            }
+            Assert.Contains("Процессор", ((XmlElement)page3.SelectSingleNode("//v:Shape[starts-with(@NameU,'PC.')]/v:Cell[@N='Comment']", ns)).GetAttribute("V"));
         }
     }
 }
