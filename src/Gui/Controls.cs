@@ -213,6 +213,9 @@ namespace PcInventory.Gui
             base.OnKeyUp(e);
         }
 
+        /// <summary>Нажать кнопку из кода (Enter в диалоге).</summary>
+        public void PerformClick() { if (Enabled) OnClick(EventArgs.Empty); }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;

@@ -15,7 +15,8 @@ namespace PcInventory.Gui
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Theme.Init();
-            var form = shotDir != null && !live ? new MainForm(Demo.Session(), shotDir, false) : new MainForm(new Session(baseDir), shotDir, live);
+            // /shotlive — настоящие данные, но только для снимков: на диск ничего не пишется
+            var form = shotDir != null && !live ? new MainForm(Demo.Session(), shotDir, false) : new MainForm(new Session(baseDir) { ReadOnly = live }, shotDir, live);
             Application.Run(form);
         }
     }
@@ -45,8 +46,8 @@ namespace PcInventory.Gui
         readonly Card cardLic = new Card("Лицензии и состояние", Theme.IcoShield);
         readonly KvList kvLic = new KvList();
         readonly Card cardArm = new Card("Карточка АРМ", Theme.IcoCard);
-        readonly Caption capDept = new Caption("Отдел"), capId = new Caption("Номер АРМ"), capFio = new Caption("ФИО сотрудника"), capNote = new Caption("Примечание", " (необязательно)");
-        readonly InputBox inDept = new InputBox(true), inId = new InputBox(false), inFio = new InputBox(false), inNote = new InputBox(false);
+        readonly Caption capDept = new Caption("Отдел"), capRoom = new Caption("Кабинет", " (пусто — кабинет отдела)"), capId = new Caption("Номер АРМ"), capFio = new Caption("ФИО сотрудника"), capNote = new Caption("Примечание", " (необязательно)");
+        readonly InputBox inDept = new InputBox(true), inRoom = new InputBox(true), inId = new InputBox(false), inFio = new InputBox(false), inNote = new InputBox(false);
         readonly V4Button btnSave = new V4Button("Сохранить в реестр", Theme.IcoSave, true);
         readonly Para armHint = new Para("");
         readonly Card cardMsg = new Card("Сообщения", Theme.IcoInfo);
@@ -66,6 +67,10 @@ namespace PcInventory.Gui
         readonly Card cardTable = new Card("Компьютеры", Theme.IcoList);
         readonly Table table = new Table();
 
+        // «Карта», «Настройки»
+        MapPage mapPage;
+        SettingsPage setPage;
+
         // «О программе»
         readonly Surface pgAbout = Page();
         readonly PageTitle titleAbout = new PageTitle("О программе", "ven4PcConfig " + Program.Version + " · из семейства Ven4Tools");
@@ -73,7 +78,8 @@ namespace PcInventory.Gui
         readonly Picture mascot = new Picture(LoadMascot());
         readonly Para aboutText = new Para(
             "ven4PcConfig собирает сведения о рабочих местах в общий реестр Excel: железо, мониторы, сеть, " +
-            "принтеры, установленные программы, активацию Windows и Office, антивирус и состояние дисков.\n\n" +
+            "принтеры, установленные программы, активацию Windows и Office, антивирус и состояние дисков. " +
+            "Компьютеры и принтеры раскладываются на карту помещений, её можно выгрузить в Visio.\n\n" +
             "Скопируйте папку программы на флешку и запустите на каждом ПК. Данные каждого ПК лежат отдельным файлом " +
             "в папке «" + Program.DataDirName + "», из них собирается «" + Program.XlsxName + "».");
         readonly Card cardPriv = new Card("Что не собирается", Theme.IcoShield);
@@ -122,6 +128,9 @@ namespace PcInventory.Gui
                 ClientSize = new Size(Theme.S(1240), Theme.S(820));
             }
 
+            mapPage = new MapPage(s, header);
+            setPage = new SettingsPage(s);
+            mapPage.DataChanged += (o, e) => { RefreshRegistry(); RefreshRooms(); };
             BuildShell();
             BuildPcPage();
             BuildRegistryPage();
@@ -139,7 +148,8 @@ namespace PcInventory.Gui
             header.Dock = DockStyle.Top;
             header.Height = Theme.S(60);
 
-            string[][] items = { new[] { "Этот компьютер", Theme.IcoComputer }, new[] { "Реестр", Theme.IcoList }, new[] { "О программе", Theme.IcoInfo } };
+            string[][] items = { new[] { "Этот компьютер", Theme.IcoComputer }, new[] { "Реестр", Theme.IcoList }, new[] { "Карта", Theme.IcoMap },
+                                 new[] { "Настройки", Theme.IcoSettings }, new[] { "О программе", Theme.IcoInfo } };
             for (int i = 0; i < items.Length; i++)
             {
                 var n = new NavItem(items[i][0], items[i][1]);
@@ -151,7 +161,7 @@ namespace PcInventory.Gui
             sidebar.Controls.Add(sideStatus);
             sidebar.Resize += (o, e) => LayoutSidebar();
 
-            pages.Add(pgPc); pages.Add(pgReg); pages.Add(pgAbout);
+            pages.Add(pgPc); pages.Add(pgReg); pages.Add(mapPage); pages.Add(setPage); pages.Add(pgAbout);
             foreach (var p in pages) main.Controls.Add(p);
             main.Controls.Add(header);
             Controls.Add(main);
@@ -171,8 +181,8 @@ namespace PcInventory.Gui
             TextRenderer.DrawText(g, "PcConfig", Theme.Logo, new Point(tx + w1, y - Theme.S(2)), Theme.Accent, fl);
             TextRenderer.DrawText(g, "РЕЕСТР АРМ", Theme.Eyebrow, new Point(tx, y + Theme.S(28)), Theme.Accent, fl);
             using (var p = new Pen(Theme.Border)) g.DrawLine(p, sidebar.Width - 1, 0, sidebar.Width - 1, sidebar.Height);
-            // разделитель над «О программе», как в Ven4Tools над «Настройками»
-            int sepY = nav[2].Top - Theme.S(14);
+            // разделитель над «Настройками», как в Ven4Tools
+            int sepY = nav[3].Top - Theme.S(14);
             using (var p = new Pen(Theme.Border)) g.DrawLine(p, Theme.S(26), sepY, sidebar.Width - Theme.S(26), sepY);
         }
 
@@ -181,7 +191,7 @@ namespace PcInventory.Gui
             int x = Theme.S(18), w = sidebar.Width - Theme.S(36), y = Theme.S(104);
             for (int i = 0; i < nav.Count; i++)
             {
-                if (i == 2) y += Theme.S(28);
+                if (i == 3) y += Theme.S(28);
                 nav[i].SetBounds(x, y, w, Theme.S(42));
                 y += Theme.S(48);
             }
@@ -220,6 +230,8 @@ namespace PcInventory.Gui
             SuspendLayout();
             if (page == 0) LayoutPc();
             else if (page == 1) LayoutRegistry();
+            else if (page == 2) mapPage.LayoutPage();
+            else if (page == 3) setPage.LayoutPage();
             else LayoutAbout();
             ResumeLayout();
         }
@@ -236,16 +248,16 @@ namespace PcInventory.Gui
             cardLic.Controls.Add(kvLic);
             kvInfo.KeyWidth = 140;
             kvLic.KeyWidth = 140;
-            foreach (Control c in new Control[] { capDept, inDept, capId, inId, capFio, inFio, capNote, inNote, btnSave, armHint })
+            foreach (Control c in new Control[] { capDept, inDept, capRoom, inRoom, capId, inId, capFio, inFio, capNote, inNote, btnSave, armHint })
                 cardArm.Controls.Add(c);
             cardMsg.Controls.Add(kvMsg);
             cardMsg.Controls.Add(btnAdmin);
             btnAdmin.Visible = false;
             btnAdmin.Click += (o, e) => RestartAsAdmin();
-            // порядок Tab: отдел → номер → ФИО → примечание → сохранить
+            // порядок Tab: отдел → кабинет → номер → ФИО → примечание → сохранить
             int ti = 0;
-            foreach (Control c in new Control[] { inDept, inId, inFio, inNote, btnSave }) c.TabIndex = ti++;
-            foreach (Control c in new Control[] { capDept, capId, capFio, capNote, armHint }) c.TabStop = false;
+            foreach (Control c in new Control[] { inDept, inRoom, inId, inFio, inNote, btnSave }) c.TabIndex = ti++;
+            foreach (Control c in new Control[] { capDept, capRoom, capId, capFio, capNote, armHint }) c.TabStop = false;
             cardArm.TabIndex = 0;
             cardInfo.TabStop = false;
             btnRecollect.TabIndex = 10;
@@ -262,7 +274,7 @@ namespace PcInventory.Gui
             btnRecollect.Click += (o, e) => StartCollect();
             inDept.Picked += (o, e) => SuggestId(true);
             inDept.Box.Leave += (o, e) => SuggestId(false);
-            foreach (var ib in new[] { inDept, inId, inFio, inNote })
+            foreach (var ib in new[] { inDept, inRoom, inId, inFio, inNote })
                 ib.Box.KeyDown += (o, e) => { if (e.KeyCode == Keys.Enter && btnSave.Enabled) { e.SuppressKeyPress = true; SaveArm(); } };
             SetMessages(new List<KvList.Row> { new KvList.Row("", "Сведения ещё собираются — подождите несколько секунд.", "") });
         }
@@ -323,7 +335,7 @@ namespace PcInventory.Gui
 
             // правая колонка
             int rx = pad + left + gap, ri = right - cardArm.Pad * 2, ry = cardArm.ContentTop;
-            foreach (var pair in new[] { new Control[] { capDept, inDept }, new Control[] { capId, inId }, new Control[] { capFio, inFio }, new Control[] { capNote, inNote } })
+            foreach (var pair in new[] { new Control[] { capDept, inDept }, new Control[] { capRoom, inRoom }, new Control[] { capId, inId }, new Control[] { capFio, inFio }, new Control[] { capNote, inNote } })
             {
                 pair[0].SetBounds(cardArm.Pad, ry, ri, Theme.S(20));
                 pair[1].SetBounds(cardArm.Pad, ry + Theme.S(24), ri, Theme.S(34));
@@ -365,7 +377,7 @@ namespace PcInventory.Gui
             {
                 try { s.Load(); }
                 catch (Exception ex) { s.LoadErrors.Add(ex.Message); }
-                BeginInvoke((MethodInvoker)(() => { RefreshRegistry(); StartCollect(); }));
+                BeginInvoke((MethodInvoker)(() => { setPage.Fill(); RefreshRegistry(); StartCollect(); }));
             }) { IsBackground = true }.Start();
         }
 
@@ -425,11 +437,13 @@ namespace PcInventory.Gui
             {
                 // проверка на настоящих данных: только снимки на диск, ничего не сохраняется
                 Directory.CreateDirectory(shotDir);
-                for (int i = 0; i < 2; i++)
+                string[] liveNames = { "live_computer", "live_registry", "live_map" };
+                for (int i = 0; i < liveNames.Length; i++)
                 {
                     ShowPage(i);
+                    if (i == 2) mapPage.Canvas.Fit();
                     Application.DoEvents();
-                    Save(Path.Combine(shotDir, (i == 0 ? "live_computer" : "live_registry") + ".png"));
+                    Save(Path.Combine(shotDir, liveNames[i] + ".png"));
                 }
                 Close();
             }
@@ -480,6 +494,9 @@ namespace PcInventory.Gui
             var others = s.Others();
             inDept.SetItems(Report.DeptOrder(others));
             inDept.Text = r["Dept"];
+            RefreshRooms();
+            var room = s.Map.RoomById(r["RoomId"]);
+            inRoom.Text = room != null ? RoomTitle(room) : "";
             lastDept = r["Dept"];
             inId.Text = r["ArmId"] != "" ? r["ArmId"] : Report.SuggestId(others, r["Dept"]);
             inFio.Text = r["Fio"];
@@ -508,10 +525,50 @@ namespace PcInventory.Gui
             return DateTime.TryParseExact(iso, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out dt) ? dt.ToString("dd.MM.yyyy") : iso;
         }
 
+        string RoomTitle(Room room)
+        {
+            if (s.Map.Floors.Count < 2) return room.Name;
+            var f = s.Map.FloorById(room.FloorId);
+            return (f != null ? f.Name + " · " : "") + room.Name;
+        }
+
+        /// <summary>Список кабинетов в карточке АРМ; если ПК перетащили на карте — и его кабинет.</summary>
+        void RefreshRooms()
+        {
+            var items = new List<string>();
+            foreach (var room in s.Map.Rooms) if (!room.Auto) items.Add(RoomTitle(room));
+            items.Sort(StringComparer.CurrentCultureIgnoreCase);
+            inRoom.SetItems(items);
+            if (s.Current != null && !inRoom.Box.Focused)
+            {
+                var cur = s.Map.RoomById(s.Current["RoomId"]);
+                inRoom.Text = cur != null ? RoomTitle(cur) : "";
+            }
+        }
+
+        /// <summary>Текст поля «Кабинет» → id кабинета. Пусто — кабинет отдела; новое название — новый кабинет на первом этаже.</summary>
+        string RoomIdFor(string text)
+        {
+            text = text.Trim();
+            if (text == "") return "";
+            foreach (var room in s.Map.Rooms)
+                if (string.Equals(RoomTitle(room), text, StringComparison.CurrentCultureIgnoreCase)) return room.Id;
+            foreach (var room in s.Map.Rooms)
+                if (string.Equals(room.Name, text, StringComparison.CurrentCultureIgnoreCase)) return room.Id;
+            if (s.Map.Floors.Count == 0) s.Map.Floors.Add(new Floor { Id = s.Map.NewId("f"), Name = "1 этаж" });
+            var r = new Room { Id = s.Map.NewId("r"), FloorId = s.Map.Floors[0].Id, Name = text, W = MapLayout.MinRoomW, H = MapLayout.Head + MapLayout.CellH * 2 + MapLayout.Gap * 3 };
+            s.Map.Rooms.Add(r);
+            MapLayout.PlaceRoom(s.Map, r);
+            s.SaveMap();
+            return r.Id;
+        }
+
         void SaveArm()
         {
             if (s.Current == null || busy) return;
             var r = s.Current;
+            try { r["RoomId"] = RoomIdFor(inRoom.Text); }
+            catch (Exception ex) { SetMessages(new List<KvList.Row> { new KvList.Row("", "Не удалось сохранить карту: " + ex.Message, Collector.Bad) }); return; }
             r["Dept"] = inDept.Text.Trim();
             r["ArmId"] = inId.Text.Trim();
             r["Fio"] = inFio.Text.Trim();
@@ -538,6 +595,7 @@ namespace PcInventory.Gui
             header.Invalidate();
             SetMessages(msgs);
             RefreshRegistry();
+            RefreshRooms();
         }
 
         // ================================================================ «Реестр»
@@ -635,6 +693,7 @@ namespace PcInventory.Gui
             sideStatus.Count = all.Count;
             sideStatus.Invalidate();
             if (page == 1) LayoutRegistry();
+            mapPage.Refresh0(false);
         }
 
         void LayoutRegistry()
@@ -721,6 +780,7 @@ namespace PcInventory.Gui
         // ================================================================ снимки для проверки вида
         void ShowDemo()
         {
+            setPage.Fill();
             RefreshRegistry();
             collected = true;
             FillPc();
@@ -738,22 +798,30 @@ namespace PcInventory.Gui
         void TakeShots()
         {
             Directory.CreateDirectory(shotDir);
-            string[] names = { "1_computer", "2_registry", "3_about" };
+            string[] names = { "1_computer", "2_registry", "3_map", "4_settings", "5_about" };
             var size = ClientSize;
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < names.Length; i++)
             {
                 ShowPage(i);
+                if (i == 2) mapPage.Canvas.Fit();
                 Application.DoEvents();
                 Save(Path.Combine(shotDir, names[i] + ".png"));
                 // вся страница целиком — окно вытягивается по высоте содержимого
                 int need = pages[i].AutoScrollMinSize.Height + header.Height;
-                if (need > size.Height)
+                if (need > size.Height && i != 2)
                 {
                     ClientSize = new Size(size.Width, need);
                     LayoutPage();
                     Application.DoEvents();
                     Save(Path.Combine(shotDir, names[i] + "_full.png"));
                     ClientSize = size;
+                }
+                if (i == 2)
+                {
+                    mapPage.ShowFloor(1);
+                    Application.DoEvents();
+                    Save(Path.Combine(shotDir, "3_map_floor2.png"));
+                    mapPage.ShowFloor(0);
                 }
             }
             // состояние «идёт сбор» — как при настоящем запуске: поля пустые, сохранение недоступно

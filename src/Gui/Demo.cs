@@ -49,7 +49,43 @@ namespace PcInventory.Gui
             };
             s.Current = cur;
             s.Prev = cur;
+            s.ReadOnly = true;
+
+            // принтеры: общий сетевой в бухгалтерии, локальный в кадрах, сетевой по IP на складе
+            foreach (var r in s.All)
+            {
+                if (r["Dept"] == "Бухгалтерия") r.Parts.Add(new[] { "Принтер", @"\\srv-01\HP-Buh", @"драйвер HP Universal Printing PCL 6; порт \\srv-01\HP-Buh; сетевой", "" });
+                if (r.Key == "OK-02") r.Parts.Add(new[] { "Принтер", "Canon LBP2900", "драйвер Canon LBP2900; порт USB001", "" });
+                if (r["Dept"] == "Склад") r.Parts.Add(new[] { "Принтер", "Kyocera ECOSYS M2040dn", "драйвер Kyocera ECOSYS M2040dn KX; порт IP_10.0.12.80", "" });
+            }
+
+            // карта: 1 этаж — кабинеты отделов строит программа; 2 этаж — план-подложка и кабинеты, заданные вручную
+            var m = s.Map;
+            m.Floors.Add(new Floor { Id = "f1", Name = "1 этаж" });
+            m.Floors.Add(new Floor { Id = "f2", Name = "2 этаж", Bg = "demo.png", W = 1600, H = 900 });
+            m.Rooms.Add(new Room { Id = "r1", FloorId = "f2", Name = "Каб. 204", Dept = "Склад", X = 70, Y = 70, W = 500, H = 230 });
+            m.Rooms.Add(new Room { Id = "r2", FloorId = "f2", Name = "Серверная", X = 640, Y = 70, W = 340, H = 230 });
+            s.DemoBg["f2"] = Plan(1600, 900);
             return s;
+        }
+
+        /// <summary>Условный план этажа: стены, коридор, двери — чтобы показать подложку на снимках.</summary>
+        static System.Drawing.Bitmap Plan(int w, int h)
+        {
+            var bmp = new System.Drawing.Bitmap(w, h);
+            using (var g = System.Drawing.Graphics.FromImage(bmp))
+            using (var wall = new System.Drawing.Pen(System.Drawing.Color.FromArgb(60, 60, 60), 8))
+            {
+                g.Clear(System.Drawing.Color.FromArgb(236, 238, 240));
+                g.DrawRectangle(wall, 40, 40, w - 80, h - 80);
+                g.DrawLine(wall, 40, 340, w - 40, 340);
+                g.DrawLine(wall, 40, 470, w - 40, 470);
+                foreach (int x in new[] { 600, 1010, 1300 }) g.DrawLine(wall, x, 40, x, 340);
+                foreach (int x in new[] { 520, 1060 }) g.DrawLine(wall, x, 470, x, h - 40);
+                using (var door = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(236, 238, 240)))
+                    foreach (int x in new[] { 260, 760, 1120, 1420 }) g.FillRectangle(door, x, 334, 70, 12);
+            }
+            return bmp;
         }
 
         static PcRecord Pc(string name, string dept, string id, string fio, string collected, string os, string osVer, string ramGb,

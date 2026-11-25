@@ -9,7 +9,7 @@ namespace PcInventory
         public const string XlsxName = "Реестр_АРМ.xlsx";
         public const string DataDirName = "ven4PcConfig_данные";
 
-        public static readonly string Version = "1.2.1";
+        public static readonly string Version = "1.3.0";
 
         [STAThread]
         static int Main(string[] args)

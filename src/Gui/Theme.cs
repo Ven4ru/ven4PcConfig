@@ -85,6 +85,8 @@ namespace PcInventory.Gui
             IcoSave = "", IcoExcel = "", IcoFolder = "", IcoDown = "", IcoCheck = "",
             IcoWarn = "", IcoCard = "", IcoShield = "", IcoChip = "", IcoPeople = "";
 
+        public const string IcoMap = "", IcoSettings = ""; // MapLayers (этажи), Setting
+
         public static GraphicsPath Round(Rectangle r, int radius)
         {
             var p = new GraphicsPath();

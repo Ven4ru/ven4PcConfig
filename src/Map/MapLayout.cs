@@ -67,7 +67,7 @@ namespace PcInventory
     /// </summary>
     static class MapLayout
     {
-        public const int CellW = 150, CellH = 64, Head = 34, Gap = 8, Margin = 40, MinRoomW = 324;
+        public const int CellW = 170, CellH = 64, Head = 34, Gap = 8, Margin = 40, MinRoomW = 364;
         public const string NoDept = "Без отдела";
 
         public static ResolvedMap Resolve(MapDoc doc, List<PcRecord> pcs)
@@ -98,7 +98,7 @@ namespace PcInventory
                 {
                     Key = "pc:" + pc.Key, Pc = pc, Room = room,
                     Line1 = pc["ArmId"] != "" ? pc["ArmId"] + " · " + pc["PcName"] : pc["PcName"],
-                    Line2 = ShortFio(pc["Fio"]),
+                    Line2 = pc["Fio"] != "" ? ShortFio(pc["Fio"]) : Login(pc["User"]),
                     Grade = Report.ProblemsOf(pc).Count > 0 ? Collector.Bad : Collector.Ok,
                 });
             }
@@ -159,7 +159,7 @@ namespace PcInventory
         }
 
         /// <summary>Новый кабинет — в первое свободное место первого этажа, строками слева направо.</summary>
-        static void PlaceRoom(MapDoc doc, Room r)
+        public static void PlaceRoom(MapDoc doc, Room r)
         {
             var floor = doc.FloorById(r.FloorId);
             int maxW = Math.Max(floor != null ? floor.W : 1600, r.W + Margin * 2);
@@ -222,6 +222,13 @@ namespace PcInventory
             foreach (var i in m.ItemsOn(f)) { right = Math.Max(right, i.Rect.Right); bottom = Math.Max(bottom, i.Rect.Bottom); }
             f.W = Math.Max(f.W, right + Margin);
             f.H = Math.Max(f.H, bottom + Margin);
+        }
+
+        /// <summary>«CORP\o.smirnova» → «o.smirnova» — подпись значка, если ФИО не заполнено.</summary>
+        static string Login(string user)
+        {
+            int i = (user ?? "").LastIndexOf('\\');
+            return i >= 0 ? user.Substring(i + 1) : user ?? "";
         }
 
         /// <summary>«Смирнова Ольга Петровна» → «Смирнова О. П.»</summary>

@@ -65,12 +65,25 @@ namespace PcInventory
             return sb.ToString();
         }
 
-        public void SaveMap() => Map.Save(MapPath);
+        /// <summary>Демо-данные и проверка вида (/shot, /shotlive): на диск ничего не пишется.</summary>
+        public bool ReadOnly;
+        /// <summary>Подложки демо-карты, нарисованные в памяти.</summary>
+        public readonly Dictionary<string, System.Drawing.Image> DemoBg = new Dictionary<string, System.Drawing.Image>();
 
-        public void SaveSettings() => Settings.Save(SettingsPath);
+        public void SaveMap() { if (!ReadOnly) Map.Save(MapPath); }
+
+        public void SaveSettings() { if (!ReadOnly) Settings.Save(SettingsPath); }
 
         /// <summary>Сохранить запись другого ПК (например, перетащили на карте в другой кабинет).</summary>
-        public void SaveRecord(PcRecord r) => Store.Save(r);
+        public void SaveRecord(PcRecord r) { if (!ReadOnly) Store.Save(r); }
+
+        /// <summary>Картинка-подложка этажа (вызывающий освобождает её сам).</summary>
+        public System.Drawing.Image Background(Floor f)
+        {
+            System.Drawing.Image img;
+            if (f != null && DemoBg.TryGetValue(f.Id, out img)) return new System.Drawing.Bitmap(img);
+            return MapRenderer.LoadBg(MapDir, f);
+        }
 
         /// <summary>Перечитать папку данных, сохранив собранную запись этого ПК.</summary>
         public void Reload()

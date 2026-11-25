@@ -114,6 +114,19 @@ namespace PcInventory.Tests
                     bmp.Save(Path.Combine(outDir, "Карта_АРМ_" + f.Name + ".png"), System.Drawing.Imaging.ImageFormat.Png);
         }
 
+        /// <summary>Выгрузка по настоящей папке программы (ручная проверка): только если задана V4PC_REALDIR.</summary>
+        [Fact]
+        public void ExportRealDir_WhenRequested()
+        {
+            string real = Environment.GetEnvironmentVariable("V4PC_REALDIR");
+            if (string.IsNullOrEmpty(real)) return;
+            var s = new Session(real.TrimEnd('\\') + "\\");
+            s.Load();
+            var errors = new List<string>();
+            MapExport.Export(s, errors);
+            Assert.Empty(errors);
+        }
+
         [Fact]
         public void Drawio_ValidXml_DataAndParents()
         {
