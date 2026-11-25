@@ -46,10 +46,78 @@ namespace PcInventory.Gui
             BackColor = Theme.Card;
             SetStyle(ControlStyles.Selectable, true);
             TabStop = true;
-            roomMenu.BackColor = Theme.Raised;
-            roomMenu.ForeColor = Theme.Text;
-            roomMenu.Items.Add("Изменить кабинет…", null, (s, e) => Raise(EditRoom));
-            roomMenu.Items.Add("Удалить кабинет", null, (s, e) => Raise(DeleteRoom));
+            foreach (var m in new[] { roomMenu, itemMenu }) { m.BackColor = Theme.Raised; m.ForeColor = Theme.Text; }
+        }
+
+        readonly ContextMenuStrip itemMenu = new ContextMenuStrip { Renderer = new DarkRenderer(), ShowImageMargin = false, Font = Theme.Body };
+
+        ToolStripMenuItem Item(string text, EventHandler click)
+        {
+            var mi = new ToolStripMenuItem(text) { ForeColor = Theme.Text };
+            if (click != null) mi.Click += click;
+            return mi;
+        }
+
+        /// <summary>Подменю у пункта: тёмное, как основное меню.</summary>
+        static void Dark(ToolStripMenuItem mi)
+        {
+            var dd = (ToolStripDropDownMenu)mi.DropDown;
+            dd.Renderer = new DarkRenderer();
+            dd.ShowImageMargin = false;
+            dd.BackColor = Theme.Raised;
+            dd.Font = Theme.Body;
+        }
+
+        /// <summary>Меню кабинета: изменить, перенести на другой этаж (любого здания), удалить.</summary>
+        void ShowRoomMenu(Room r, Point at)
+        {
+            roomMenu.Items.Clear();
+            roomMenu.Items.Add(Item("Изменить кабинет…", (s, e) => Raise(EditRoom)));
+            var move = Item("Перенести на этаж", null);
+            Dark(move);
+            foreach (var f in Map.Doc.Floors)
+            {
+                if (f.Id == r.FloorId) continue;
+                var target = f;
+                move.DropDownItems.Add(Item(Map.Doc.Buildings.Count > 1 ? Map.Doc.FloorTitle(f) : f.Name, (s, e) =>
+                {
+                    MapLayout.MoveRoom(Map.Doc, r, target);
+                    selected = null;
+                    Commit();
+                }));
+            }
+            if (move.DropDownItems.Count == 0) { move.Enabled = false; move.Text = "Перенести на этаж (других этажей нет)"; }
+            roomMenu.Items.Add(move);
+            roomMenu.Items.Add(Item("Удалить кабинет", (s, e) => Raise(DeleteRoom)));
+            roomMenu.Show(this, at);
+        }
+
+        /// <summary>Меню значка: сведения о ПК и перенос в любой кабинет любого этажа.</summary>
+        void ShowItemMenu(MapItem it, Point at)
+        {
+            itemMenu.Items.Clear();
+            if (it.IsPc) itemMenu.Items.Add(Item("Сведения о компьютере…", (s, e) => { if (OpenItem != null) OpenItem(this, new ItemEventArgs { Item = it }); }));
+            var move = Item("Перенести в кабинет", null);
+            Dark(move);
+            foreach (var f in Map.Doc.Floors)
+                foreach (var r in Map.RoomsOn(f))
+                {
+                    var target = r;
+                    var mi = Item(Map.RoomTitle(r), (s, e) =>
+                    {
+                        var pc = MapLayout.MoveItem(Map.Doc, it, target);
+                        if (pc != null)
+                        {
+                            try { S.SaveRecord(pc); } catch (Exception ex) { MessageBox.Show(this, "Не удалось сохранить ПК: " + ex.Message, "Карта"); }
+                            if (S.Current != null && S.Current.Key == pc.Key) S.Current["RoomId"] = target.Id;
+                        }
+                        Commit();
+                    });
+                    if (r == it.Room) { mi.Enabled = false; mi.Text += " — сейчас здесь"; }
+                    move.DropDownItems.Add(mi);
+                }
+            itemMenu.Items.Add(move);
+            itemMenu.Show(this, at);
         }
 
         void Raise(EventHandler<RoomEventArgs> h)
@@ -104,7 +172,7 @@ namespace PcInventory.Gui
             g.Restore(st);
             using (var p = new Pen(Theme.Border)) g.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
             // подсказка по управлению в углу
-            string hint = "Колесо — масштаб · перетащите пустое место, кабинет или значок · двойной щелчок — сведения";
+            string hint = "Колесо — масштаб · перетащите пустое место, кабинет или значок · правый щелчок — перенос на другой этаж или в кабинет";
             TextRenderer.DrawText(g, hint, Theme.Small, new Rectangle(Theme.S(12), Height - Theme.S(28), Width - Theme.S(24), Theme.S(22)), Theme.Muted,
                 TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter);
         }
@@ -137,8 +205,10 @@ namespace PcInventory.Gui
             var sr = SelectedRoom;
             if (e.Button == MouseButtons.Right)
             {
+                var hit = ItemAt(w);
+                if (hit != null) { selected = hit.Key; Invalidate(); ShowItemMenu(hit, e.Location); return; }
                 var r = RoomAt(w);
-                if (r != null) { selected = "room:" + r.Id; Invalidate(); roomMenu.Show(this, e.Location); }
+                if (r != null) { selected = "room:" + r.Id; Invalidate(); ShowRoomMenu(r, e.Location); }
                 return;
             }
             if (e.Button != MouseButtons.Left) return;
@@ -296,7 +366,7 @@ namespace PcInventory.Gui
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { if (bg != null) bg.Dispose(); tip.Dispose(); roomMenu.Dispose(); }
+            if (disposing) { if (bg != null) bg.Dispose(); tip.Dispose(); roomMenu.Dispose(); itemMenu.Dispose(); }
             base.Dispose(disposing);
         }
     }

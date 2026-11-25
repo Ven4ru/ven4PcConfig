@@ -80,7 +80,8 @@ namespace PcInventory
             for (int i = 0; i < floors.Count; i++)
             {
                 var f = floors[i];
-                pages.Append("<Page ID=\"" + i + "\" NameU=\"" + Esc(PageName(f, i)) + "\" Name=\"" + Esc(PageName(f, i)) + "\" ViewScale=\"-1\" ViewCenterX=\"" + D(f.W / Px / 2) + "\" ViewCenterY=\"" + D(f.H / Px / 2) + "\">");
+                string pn = PageName(m.Doc, f, i);
+                pages.Append("<Page ID=\"" + i + "\" NameU=\"" + Esc(pn) + "\" Name=\"" + Esc(pn) + "\" ViewScale=\"-1\" ViewCenterX=\"" + D(f.W / Px / 2) + "\" ViewCenterY=\"" + D(f.H / Px / 2) + "\">");
                 pages.Append("<PageSheet LineStyle=\"0\" FillStyle=\"0\" TextStyle=\"0\">");
                 pages.Append(C("PageWidth", f.W / Px, "IN") + C("PageHeight", f.H / Px, "IN") + C("ShdwOffsetX", 0.125) + C("ShdwOffsetY", -0.125) +
                              C("PageScale", 1, "IN") + C("DrawingScale", 1, "IN") + C("DrawingSizeType", 0) + C("DrawingScaleType", 0) +
@@ -116,7 +117,12 @@ namespace PcInventory
             return ms.ToArray();
         }
 
-        static string PageName(Floor f, int i) => f.Name != "" ? f.Name : "Этаж " + (i + 1);
+        /// <summary>Имя страницы: «Склад · 1 этаж» при нескольких зданиях. Visio ограничивает имя 31 знаком.</summary>
+        static string PageName(MapDoc doc, Floor f, int i)
+        {
+            string n = f.Name != "" ? doc.FloorTitle(f) : "Этаж " + (i + 1);
+            return n.Length > 31 ? n.Substring(0, 31) : n;
+        }
 
         static byte[] BgPng(string mapDir, Floor f)
         {
@@ -199,7 +205,9 @@ namespace PcInventory
                           C("VerticalAlign", 0) + C("TopMargin", 0.08) + C("LeftMargin", 0.1) + C("RightMargin", 0.1) + CS("LayerMember", "1"));
                 sb.Append("<Section N=\"Character\"><Row IX=\"0\">" + CS("Font", "Segoe UI") + CS("Color", Hex(P.RoomText)) + C("Style", 1) + C("Size", 0.13) + "</Row></Section>");
                 sb.Append("<Section N=\"Paragraph\"><Row IX=\"0\">" + C("HorzAlign", 0) + "</Row></Section>");
-                sb.Append(Props(new[] { new[] { "Room", "Кабинет", r.Name }, new[] { "Dept", "Отдел", r.Dept }, new[] { "Floor", "Этаж", f.Name } }));
+                var bld = m.Doc.BuildingById(f.BuildingId);
+                sb.Append(Props(new[] { new[] { "Room", "Кабинет", r.Name }, new[] { "Dept", "Отдел", r.Dept }, new[] { "Floor", "Этаж", f.Name },
+                                        new[] { "Building", "Здание", bld != null ? bld.Name : "" } }));
                 sb.Append(Rect());
                 sb.Append("<Text>" + Esc(r.Name + (r.Dept != "" && !string.Equals(r.Dept, r.Name, StringComparison.OrdinalIgnoreCase) ? " · " + r.Dept : "")) + "</Text>");
                 sb.Append("</Shape>");
@@ -210,11 +218,12 @@ namespace PcInventory
                 sb.Append("<Shape ID=\"" + id + "\" NameU=\"" + (i.IsPc ? "PC" : "Printer") + "." + id++ + "\" Name=\"" + Esc(i.Line1) + "\" Type=\"Shape\" LineStyle=\"0\" FillStyle=\"0\" TextStyle=\"0\">");
                 sb.Append(Xform(f, i.Rect));
                 sb.Append(CS("FillForegnd", Hex(P.Item)) + CS("LineColor", Hex(stripe)) + C("LineWeight", 0.0208333) + C("Rounding", 0.05) +
-                          C("VerticalAlign", 1) + C("LeftMargin", 0.08) + C("RightMargin", 0.04) + CS("LayerMember", "2"));
+                          C("VerticalAlign", 0) + C("TopMargin", 0.07) + C("LeftMargin", 0.4) + C("RightMargin", 0.04) + CS("LayerMember", "2"));
                 sb.Append("<Section N=\"Character\"><Row IX=\"0\">" + CS("Font", "Segoe UI") + CS("Color", Hex(P.ItemText)) + C("Size", 0.105) + "</Row></Section>");
                 sb.Append("<Section N=\"Paragraph\"><Row IX=\"0\">" + C("HorzAlign", 0) + "</Row></Section>");
                 sb.Append(Props(i.IsPc ? PcProps(m, i.Pc) : PrinterProps(i.Printer)));
                 sb.Append(Rect());
+                sb.Append(i.IsPc ? PcIcon(i.Rect.Height) : PrinterIcon(i.Rect.Height));
                 sb.Append("<Text>" + Esc(Util.Join("\n", new[] { i.Line1, i.Line2 })) + "</Text>");
                 sb.Append("</Shape>");
             }
@@ -276,6 +285,25 @@ namespace PcInventory
             "<Row T=\"RelLineTo\" IX=\"3\">" + C("X", 1) + C("Y", 1) + "</Row>" +
             "<Row T=\"RelLineTo\" IX=\"4\">" + C("X", 0) + C("Y", 1) + "</Row>" +
             "<Row T=\"RelLineTo\" IX=\"5\">" + C("X", 0) + C("Y", 0) + "</Row></Section>";
+
+        // ------------------------------------------------------------ значки: те же линии, что рисует программа (MapRenderer),
+        // в координатах фигуры (дюймы от левого нижнего угла), без заливки — цвет линий как у рамки
+        static string PcIcon(int h) =>
+            GeoRect(1, 11, 11, 31, 24, h) + GeoLine(2, 21, 24, 21, 28, h) + GeoLine(3, 15, 29, 27, 29, h);
+
+        static string PrinterIcon(int h) =>
+            GeoRect(1, 15, 11, 27, 16, h) + GeoRect(2, 11, 16, 31, 25, h) + GeoRect(3, 15, 23, 27, 29, h);
+
+        static string GeoRect(int ix, int x1, int y1, int x2, int y2, int h) =>
+            "<Section N=\"Geometry\" IX=\"" + ix + "\">" + C("NoFill", 1) + C("NoLine", 0) + C("NoShow", 0) + C("NoSnap", 0) + C("NoQuickDrag", 0) +
+            Pt("MoveTo", 1, x1, y1, h) + Pt("LineTo", 2, x2, y1, h) + Pt("LineTo", 3, x2, y2, h) + Pt("LineTo", 4, x1, y2, h) + Pt("LineTo", 5, x1, y1, h) + "</Section>";
+
+        static string GeoLine(int ix, int x1, int y1, int x2, int y2, int h) =>
+            "<Section N=\"Geometry\" IX=\"" + ix + "\">" + C("NoFill", 1) + C("NoLine", 0) + C("NoShow", 0) + C("NoSnap", 0) + C("NoQuickDrag", 0) +
+            Pt("MoveTo", 1, x1, y1, h) + Pt("LineTo", 2, x2, y2, h) + "</Section>";
+
+        static string Pt(string t, int ix, int x, int y, int h) =>
+            "<Row T=\"" + t + "\" IX=\"" + ix + "\">" + C("X", x / Px) + C("Y", (h - y) / Px) + "</Row>";
 
         static string C(string n, double v, string unit = null) =>
             "<Cell N=\"" + n + "\" V=\"" + D(v) + "\"" + (unit != null ? " U=\"" + unit + "\"" : "") + "/>";

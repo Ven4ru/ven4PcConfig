@@ -20,7 +20,7 @@ namespace PcInventory
             for (int fi = 0; fi < m.Doc.Floors.Count; fi++)
             {
                 var f = m.Doc.Floors[fi];
-                sb.Append("<diagram id=\"floor" + (fi + 1) + "\" name=\"" + Esc(f.Name != "" ? f.Name : "Этаж " + (fi + 1)) + "\">");
+                sb.Append("<diagram id=\"floor" + (fi + 1) + "\" name=\"" + Esc(f.Name != "" ? m.Doc.FloorTitle(f) : "Этаж " + (fi + 1)) + "\">");
                 sb.Append("<mxGraphModel dx=\"" + f.W + "\" dy=\"" + f.H + "\" grid=\"0\" gridSize=\"10\" guides=\"1\" tooltips=\"1\" connect=\"0\" arrows=\"0\" fold=\"1\" page=\"1\" pageScale=\"1\" " +
                           "pageWidth=\"" + f.W + "\" pageHeight=\"" + f.H + "\" math=\"0\" shadow=\"0\"><root>");
                 sb.Append("<mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/>");
@@ -52,7 +52,9 @@ namespace PcInventory
                     string label = Html(i.Line1) + (i.Line2 != "" ? "<br><span style=\"color:" + Hex(P.ItemSub) + "\">" + Html(i.Line2) + "</span>" : "");
                     sb.Append("<object id=\"item" + (fi + 1) + "_" + (++n) + "\" label=\"" + Esc(label) + "\" tooltip=\"" + Esc(Tooltip(rows)) + "\"");
                     foreach (var row in rows) sb.Append(Attr(row[1], row[2]));
-                    sb.Append("><mxCell style=\"rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=11;" +
+                    // shape=label — фигура draw.io со значком слева (как в программе)
+                    sb.Append("><mxCell style=\"shape=label;rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=34;fontSize=11;" +
+                              "image=data:image/svg+xml," + Icon(i.IsPc, stripe) + ";imageWidth=24;imageHeight=22;imageAlign=left;imageVerticalAlign=middle;" +
                               "fillColor=" + Hex(P.Item) + ";strokeColor=" + Hex(stripe) + ";strokeWidth=2;fontColor=" + Hex(P.ItemText) + ";\" vertex=\"1\" parent=\"" + Esc(i.Room.Id) + "\">");
                     sb.Append(Geo(i.Rect.X - i.Room.X, i.Rect.Y - i.Room.Y, i.Rect.Width, i.Rect.Height) + "</mxCell></object>");
                 }
@@ -60,6 +62,17 @@ namespace PcInventory
             }
             sb.Append("</mxfile>\n");
             return sb.ToString();
+        }
+
+        /// <summary>Значок ПК или принтера — SVG в base64 (draw.io пишет «data:image/svg+xml,&lt;base64&gt;»).</summary>
+        static string Icon(bool pc, Color c)
+        {
+            string st = "fill='none' stroke='" + Hex(c) + "' stroke-width='1.6'";
+            string body = pc
+                ? "<rect x='1' y='1' width='20' height='13' " + st + "/><path d='M11 14v4M5 19h12' " + st + "/>"
+                : "<rect x='5' y='1' width='12' height='5' " + st + "/><rect x='1' y='6' width='20' height='9' " + st + "/><rect x='5' y='13' width='12' height='6' " + st + "/>";
+            string svg = "<svg xmlns='http://www.w3.org/2000/svg' width='22' height='20' viewBox='0 0 22 20'>" + body + "</svg>";
+            return Convert.ToBase64String(Encoding.UTF8.GetBytes(svg));
         }
 
         static string Tooltip(string[][] rows)

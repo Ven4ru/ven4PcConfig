@@ -18,9 +18,11 @@ namespace PcInventory.Gui
         readonly V4Button btnBg = new V4Button("Подложка…", Theme.IcoFolder, false);
         readonly V4Button btnRoom = new V4Button("Кабинет +", Theme.IcoCard, false);
         readonly FloorTabs tabs = new FloorTabs();
+        readonly V4Button btnBuilding = new V4Button("Здание", null, false);
+        readonly ContextMenuStrip bldMenu = new ContextMenuStrip { Renderer = new DarkRenderer(), ShowImageMargin = false, Font = Theme.Body };
         public readonly MapCanvas Canvas = new MapCanvas();
         ResolvedMap map;
-        int floor;
+        int bld, floor; // здание и этаж внутри здания
         string lastExport;
 
         /// <summary>Записи ПК или кабинеты изменились — окну нужно обновить реестр и карточку АРМ.</summary>
@@ -32,7 +34,10 @@ namespace PcInventory.Gui
             this.header = header;
             Dock = DockStyle.Fill;
             Visible = false;
-            foreach (Control c in new Control[] { title, btnExport, btnReset, btnBg, btnRoom, tabs, Canvas }) Controls.Add(c);
+            foreach (Control c in new Control[] { title, btnExport, btnReset, btnBg, btnRoom, btnBuilding, tabs, Canvas }) Controls.Add(c);
+            bldMenu.BackColor = Theme.Raised;
+            bldMenu.ForeColor = Theme.Text;
+            btnBuilding.Click += (o, e) => ShowBuildingMenu();
             Canvas.S = s;
             Canvas.Changed += (o, e) => Refresh0(true);
             Canvas.EditRoom += (o, e) => EditRoom(e.Room);
@@ -49,30 +54,38 @@ namespace PcInventory.Gui
             btnRoom.Click += (o, e) => AddRoom();
         }
 
-        /// <summary>Открыть этаж по номеру (снимки вида).</summary>
-        public void ShowFloor(int i)
+        /// <summary>Открыть здание и этаж по номерам (снимки вида).</summary>
+        public void ShowFloor(int building, int i)
         {
+            bld = building;
             floor = i;
             Refresh0(false);
             Canvas.Fit();
         }
 
-        Floor CurFloor => map != null && floor < map.Doc.Floors.Count ? map.Doc.Floors[floor] : null;
+        Building CurBuilding => map != null && bld < map.Doc.Buildings.Count ? map.Doc.Buildings[bld] : null;
+        List<Floor> BFloors => map != null ? map.Doc.FloorsOf(CurBuilding) : new List<Floor>();
+        Floor CurFloor { get { var fl = BFloors; return floor < fl.Count ? fl[floor] : null; } }
 
         /// <summary>Пересчитать раскладку и перерисовать. changed — правка карты/ПК: сообщить окну.</summary>
         public void Refresh0(bool changed)
         {
             map = s.ResolveMap();
-            if (floor >= map.Doc.Floors.Count) floor = map.Doc.Floors.Count - 1;
+            if (bld >= map.Doc.Buildings.Count) bld = map.Doc.Buildings.Count - 1;
+            if (bld < 0) bld = 0;
+            var fl = BFloors;
+            if (floor >= fl.Count) floor = fl.Count - 1;
             if (floor < 0) floor = 0;
             var names = new List<string>();
-            foreach (var f in map.Doc.Floors) names.Add(f.Name);
+            foreach (var f in fl) names.Add(f.Name);
             tabs.Set(names, floor);
             Canvas.SetMap(map, CurFloor);
+            btnBuilding.Text = (CurBuilding != null ? CurBuilding.Name : "Здание") + "  ▾";
+            btnBuilding.Width = btnBuilding.Preferred();
             int pcs = 0, pr = 0;
             foreach (var i in map.Items) if (i.IsPc) pcs++; else pr++;
             string sub = s.All.Count == 0 ? "Компьютеры появятся на карте после сохранения в реестр"
-                : "ПК: " + pcs + " · принтеров: " + pr + " · кабинетов: " + map.Doc.Rooms.Count + " · этажей: " + map.Doc.Floors.Count;
+                : "ПК: " + pcs + " · принтеров: " + pr + " · кабинетов: " + map.Doc.Rooms.Count;
             if (s.MapError != null) sub = "Карта была повреждена и построена заново — " + s.MapError;
             else if (CurFloor != null && CurFloor.Bg != "" && !File.Exists(Path.Combine(s.MapDir, CurFloor.Bg)) && !s.DemoBg.ContainsKey(CurFloor.Id))
                 sub = "Не найдена подложка «" + CurFloor.Bg + "» в папке «карта» — этаж показан без неё";
@@ -80,6 +93,7 @@ namespace PcInventory.Gui
             if (lastExport != null) sub = lastExport;
             title.Sub = sub;
             title.Invalidate();
+            LayoutPage(); // ширина кнопки здания зависит от названия — вкладки этажей сдвигаются за ней
             if (changed && DataChanged != null) DataChanged(this, EventArgs.Empty);
         }
 
@@ -95,7 +109,9 @@ namespace PcInventory.Gui
                 bx -= Theme.S(10);
             }
             title.SetBounds(pad, Theme.S(22), bx - pad - gap, Theme.S(64));
-            tabs.SetBounds(pad, Theme.S(96), W, Theme.S(36));
+            btnBuilding.SetBounds(pad, Theme.S(96), btnBuilding.Width, Theme.S(36));
+            int tx = pad + btnBuilding.Width + Theme.S(12);
+            tabs.SetBounds(tx, Theme.S(96), pad + W - tx, Theme.S(36));
             int top = Theme.S(140);
             Canvas.SetBounds(pad, top, W, Math.Max(Theme.S(200), ClientSize.Height - top - Theme.S(24)));
         }
@@ -165,14 +181,85 @@ namespace PcInventory.Gui
             Canvas.Fit();
         }
 
+        // ------------------------------------------------------------ здания
+        void ShowBuildingMenu()
+        {
+            bldMenu.Items.Clear();
+            for (int i = 0; i < s.Map.Buildings.Count; i++)
+            {
+                int idx = i;
+                var mi = new ToolStripMenuItem((i == bld ? "✓  " : "     ") + s.Map.Buildings[i].Name) { ForeColor = Theme.Text };
+                mi.Click += (o, e) => { bld = idx; floor = 0; lastExport = null; Refresh0(false); Canvas.Fit(); LayoutPage(); };
+                bldMenu.Items.Add(mi);
+            }
+            bldMenu.Items.Add(new ToolStripSeparator());
+            bldMenu.Items.Add(new ToolStripMenuItem("Новое здание…", null, (o, e) => AddBuilding()) { ForeColor = Theme.Text });
+            bldMenu.Items.Add(new ToolStripMenuItem("Переименовать здание…", null, (o, e) => RenameBuilding()) { ForeColor = Theme.Text });
+            bldMenu.Items.Add(new ToolStripMenuItem("Удалить здание", null, (o, e) => DeleteBuilding()) { ForeColor = Theme.Text });
+            bldMenu.MinimumSize = new Size(btnBuilding.Width, 0);
+            bldMenu.Show(btnBuilding, new Point(0, btnBuilding.Height + Theme.S(2)));
+        }
+
+        void AddBuilding()
+        {
+            using (var d = new TextDialog("Новое здание", "Название (корпус, склад, филиал)", "Здание " + (s.Map.Buildings.Count + 1)))
+            {
+                if (d.ShowDialog(FindForm()) != DialogResult.OK) return;
+                var b = new Building { Id = s.Map.NewId("b"), Name = d.Value };
+                s.Map.Buildings.Add(b);
+                s.Map.Floors.Add(new Floor { Id = s.Map.NewId("f"), BuildingId = b.Id, Name = "1 этаж" });
+                bld = s.Map.Buildings.Count - 1;
+                floor = 0;
+                Save();
+                Canvas.Fit();
+                LayoutPage();
+            }
+        }
+
+        void RenameBuilding()
+        {
+            var b = CurBuilding;
+            if (b == null) return;
+            using (var d = new TextDialog("Здание", "Название", b.Name))
+            {
+                if (d.ShowDialog(FindForm()) != DialogResult.OK) return;
+                b.Name = d.Value;
+                Save();
+                LayoutPage();
+            }
+        }
+
+        void DeleteBuilding()
+        {
+            var b = CurBuilding;
+            if (b == null) return;
+            if (s.Map.Buildings.Count < 2) { ConfirmDialog.Ask(FindForm(), "Удалить здание", "Единственное здание удалить нельзя.", "Понятно"); return; }
+            foreach (var f in s.Map.FloorsOf(b))
+                if (map.RoomsOn(f).Count > 0)
+                {
+                    ConfirmDialog.Ask(FindForm(), "Удалить здание", "В здании «" + b.Name + "» есть кабинеты. Перенесите их на этажи другого здания (правый щелчок по кабинету) или удалите, затем удалите здание.", "Понятно");
+                    return;
+                }
+            if (!ConfirmDialog.Ask(FindForm(), "Удалить здание", "Удалить пустое здание «" + b.Name + "» вместе с его этажами?", "Удалить")) return;
+            s.Map.Floors.RemoveAll(f => f.BuildingId == b.Id);
+            s.Map.Buildings.Remove(b);
+            bld = 0;
+            floor = 0;
+            Save();
+            Canvas.Fit();
+            LayoutPage();
+        }
+
         // ------------------------------------------------------------ этажи
         void AddFloor()
         {
-            using (var d = new TextDialog("Новый этаж", "Название", (s.Map.Floors.Count + 1) + " этаж"))
+            var b = CurBuilding;
+            if (b == null) return;
+            using (var d = new TextDialog("Новый этаж", "Название", (s.Map.FloorsOf(b).Count + 1) + " этаж"))
             {
                 if (d.ShowDialog(FindForm()) != DialogResult.OK) return;
-                s.Map.Floors.Add(new Floor { Id = s.Map.NewId("f"), Name = d.Value });
-                floor = s.Map.Floors.Count - 1;
+                s.Map.Floors.Add(new Floor { Id = s.Map.NewId("f"), BuildingId = b.Id, Name = d.Value });
+                floor = s.Map.FloorsOf(b).Count - 1;
                 Save();
                 Canvas.Fit();
             }
@@ -194,10 +281,10 @@ namespace PcInventory.Gui
         {
             var f = CurFloor;
             if (f == null) return;
-            if (s.Map.Floors.Count < 2) { ConfirmDialog.Ask(FindForm(), "Удалить этаж", "Единственный этаж удалить нельзя.", "Понятно"); return; }
+            if (BFloors.Count < 2) { ConfirmDialog.Ask(FindForm(), "Удалить этаж", "Единственный этаж здания удалить нельзя — удалите здание целиком.", "Понятно"); return; }
             if (map.RoomsOn(f).Count > 0)
             {
-                ConfirmDialog.Ask(FindForm(), "Удалить этаж", "На этаже «" + f.Name + "» есть кабинеты. Удалите их или перенесите компьютеры на другой этаж, затем удалите этаж.", "Понятно");
+                ConfirmDialog.Ask(FindForm(), "Удалить этаж", "На этаже «" + f.Name + "» есть кабинеты. Перенесите их на другой этаж (правый щелчок по кабинету) или удалите, затем удалите этаж.", "Понятно");
                 return;
             }
             if (!ConfirmDialog.Ask(FindForm(), "Удалить этаж", "Удалить пустой этаж «" + f.Name + "»?", "Удалить")) return;

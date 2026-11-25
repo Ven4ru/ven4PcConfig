@@ -23,7 +23,7 @@ namespace PcInventory
                     Try(errors, "PNG «" + f.Name + "»", () =>
                     {
                         using (var bmp = MapRenderer.Render(m, floor, s.MapDir, MapPalette.Light, true))
-                            done.Add(Write(Path.Combine(s.BaseDir, BaseName + "_" + Safe(floor.Name) + ".png"), MapRenderer.Png(bmp)));
+                            done.Add(Write(Path.Combine(s.BaseDir, BaseName + "_" + Safe(m.Doc.FloorTitle(floor).Replace(" · ", " - ")) + ".png"), MapRenderer.Png(bmp)));
                     });
                 }
             if (s.Settings.Drawio)

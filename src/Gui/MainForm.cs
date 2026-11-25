@@ -525,12 +525,7 @@ namespace PcInventory.Gui
             return DateTime.TryParseExact(iso, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out dt) ? dt.ToString("dd.MM.yyyy") : iso;
         }
 
-        string RoomTitle(Room room)
-        {
-            if (s.Map.Floors.Count < 2) return room.Name;
-            var f = s.Map.FloorById(room.FloorId);
-            return (f != null ? f.Name + " · " : "") + room.Name;
-        }
+        string RoomTitle(Room room) => MapLayout.RoomTitle(s.Map, room);
 
         /// <summary>Список кабинетов в карточке АРМ; если ПК перетащили на карте — и его кабинет.</summary>
         void RefreshRooms()
@@ -555,7 +550,8 @@ namespace PcInventory.Gui
                 if (string.Equals(RoomTitle(room), text, StringComparison.CurrentCultureIgnoreCase)) return room.Id;
             foreach (var room in s.Map.Rooms)
                 if (string.Equals(room.Name, text, StringComparison.CurrentCultureIgnoreCase)) return room.Id;
-            if (s.Map.Floors.Count == 0) s.Map.Floors.Add(new Floor { Id = s.Map.NewId("f"), Name = "1 этаж" });
+            s.Map.EnsureBuildings();
+            if (s.Map.Floors.Count == 0) s.Map.Floors.Add(new Floor { Id = s.Map.NewId("f"), BuildingId = s.Map.Buildings[0].Id, Name = "1 этаж" });
             var r = new Room { Id = s.Map.NewId("r"), FloorId = s.Map.Floors[0].Id, Name = text, W = MapLayout.MinRoomW, H = MapLayout.Head + MapLayout.CellH * 2 + MapLayout.Gap * 3 };
             s.Map.Rooms.Add(r);
             MapLayout.PlaceRoom(s.Map, r);
@@ -818,10 +814,13 @@ namespace PcInventory.Gui
                 }
                 if (i == 2)
                 {
-                    mapPage.ShowFloor(1);
+                    mapPage.ShowFloor(0, 1);
                     Application.DoEvents();
                     Save(Path.Combine(shotDir, "3_map_floor2.png"));
-                    mapPage.ShowFloor(0);
+                    mapPage.ShowFloor(1, 0);
+                    Application.DoEvents();
+                    Save(Path.Combine(shotDir, "3_map_building2.png"));
+                    mapPage.ShowFloor(0, 0);
                 }
             }
             // состояние «идёт сбор» — как при настоящем запуске: поля пустые, сохранение недоступно

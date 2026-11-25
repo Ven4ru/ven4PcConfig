@@ -61,10 +61,14 @@ namespace PcInventory.Gui
 
             // карта: 1 этаж — кабинеты отделов строит программа; 2 этаж — план-подложка и кабинеты, заданные вручную
             var m = s.Map;
-            m.Floors.Add(new Floor { Id = "f1", Name = "1 этаж" });
-            m.Floors.Add(new Floor { Id = "f2", Name = "2 этаж", Bg = "demo.png", W = 1600, H = 900 });
-            m.Rooms.Add(new Room { Id = "r1", FloorId = "f2", Name = "Каб. 204", Dept = "Склад", X = 70, Y = 70, W = 500, H = 230 });
-            m.Rooms.Add(new Room { Id = "r2", FloorId = "f2", Name = "Серверная", X = 640, Y = 70, W = 340, H = 230 });
+            m.Buildings.Add(new Building { Id = "b1", Name = "Главный корпус" });
+            m.Buildings.Add(new Building { Id = "b2", Name = "Склад" });
+            m.Floors.Add(new Floor { Id = "f1", BuildingId = "b1", Name = "1 этаж" });
+            m.Floors.Add(new Floor { Id = "f2", BuildingId = "b1", Name = "2 этаж", Bg = "demo.png", W = 1600, H = 900 });
+            m.Floors.Add(new Floor { Id = "f3", BuildingId = "b2", Name = "1 этаж" });
+            m.Rooms.Add(new Room { Id = "r1", FloorId = "f2", Name = "Каб. 204", Dept = "Отдел кадров", X = 70, Y = 70, W = 560, H = 230 });
+            m.Rooms.Add(new Room { Id = "r2", FloorId = "f2", Name = "Серверная", X = 690, Y = 70, W = 300, H = 230 });
+            m.Rooms.Add(new Room { Id = "r3", FloorId = "f3", Name = "Приёмка", Dept = "Склад", X = 40, Y = 40, W = 560, H = 200 });
             s.DemoBg["f2"] = Plan(1600, 900);
             return s;
         }

@@ -337,7 +337,7 @@ namespace PcInventory
             foreach (var f in map.Doc.Floors)
             {
                 if (sh.Rows.Count > 0) sh.Rows.Add(new XCell[0]);
-                sh.Rows.Add(new[] { new XCell(f.Name, Xlsx.Group) });
+                sh.Rows.Add(new[] { new XCell(map.Doc.FloorTitle(f), Xlsx.Group) });
                 using (var bmp = MapRenderer.Render(map, f, mapDir, MapPalette.Light, true))
                 {
                     int w = bmp.Width, h = bmp.Height;

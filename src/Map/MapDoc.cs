@@ -8,10 +8,16 @@ using System.Xml;
 
 namespace PcInventory
 {
-    /// <summary>Этаж: своя вкладка карты и своя страница в Visio. Подложка — файл в папке «карта».</summary>
+    /// <summary>Здание: у каждого свои этажи (корпус, склад, филиал).</summary>
+    class Building
+    {
+        public string Id = "", Name = "";
+    }
+
+    /// <summary>Этаж здания: своя вкладка карты и своя страница в Visio. Подложка — файл в папке «карта».</summary>
     class Floor
     {
-        public string Id = "", Name = "", Bg = "";
+        public string Id = "", BuildingId = "", Name = "", Bg = "";
         public int W = 1600, H = 1000;
     }
 
@@ -34,7 +40,40 @@ namespace PcInventory
     /// <summary>Карта помещений: этажи, кабинеты и места значков. Файл «карта.xml» в папке данных.</summary>
     class MapDoc
     {
+        public const string DefaultBuilding = "Главное здание";
+        public List<Building> Buildings = new List<Building>();
         public List<Floor> Floors = new List<Floor>();
+
+        public Building BuildingById(string id)
+        {
+            foreach (var b in Buildings) if (b.Id == id) return b;
+            return null;
+        }
+
+        /// <summary>Этажи здания в порядке вкладок.</summary>
+        public List<Floor> FloorsOf(Building b)
+        {
+            var list = new List<Floor>();
+            foreach (var f in Floors) if (b != null && f.BuildingId == b.Id) list.Add(f);
+            return list;
+        }
+
+        /// <summary>Хотя бы одно здание; этажи без здания (карта версии без зданий) — в первое.</summary>
+        public void EnsureBuildings()
+        {
+            if (Buildings.Count == 0) Buildings.Add(new Building { Id = NewId("b"), Name = DefaultBuilding });
+            foreach (var f in Floors)
+                if (BuildingById(f.BuildingId) == null) f.BuildingId = Buildings[0].Id;
+        }
+
+        /// <summary>«Склад · 1 этаж», если зданий больше одного, иначе «1 этаж».</summary>
+        public string FloorTitle(Floor f)
+        {
+            if (f == null) return "";
+            if (Buildings.Count < 2) return f.Name;
+            var b = BuildingById(f.BuildingId);
+            return (b != null ? b.Name + " · " : "") + f.Name;
+        }
         public List<Room> Rooms = new List<Room>();
         public Dictionary<string, Place> Places = new Dictionary<string, Place>();
 
@@ -56,6 +95,7 @@ namespace PcInventory
         {
             int max = 0;
             var ids = new List<string>();
+            foreach (var b in Buildings) ids.Add(b.Id);
             foreach (var f in Floors) ids.Add(f.Id);
             foreach (var r in Rooms) ids.Add(r.Id);
             foreach (var id in ids)
@@ -84,8 +124,10 @@ namespace PcInventory
                 {
                     var e = n as XmlElement;
                     if (e == null) continue;
-                    if (e.Name == "floor")
-                        m.Floors.Add(new Floor { Id = e.GetAttribute("id"), Name = e.GetAttribute("name"), Bg = e.GetAttribute("bg"), W = Int(e, "w", 1600), H = Int(e, "h", 1000) });
+                    if (e.Name == "building")
+                        m.Buildings.Add(new Building { Id = e.GetAttribute("id"), Name = e.GetAttribute("name") });
+                    else if (e.Name == "floor")
+                        m.Floors.Add(new Floor { Id = e.GetAttribute("id"), BuildingId = e.GetAttribute("building"), Name = e.GetAttribute("name"), Bg = e.GetAttribute("bg"), W = Int(e, "w", 1600), H = Int(e, "h", 1000) });
                     else if (e.Name == "room")
                         m.Rooms.Add(new Room
                         {
@@ -131,10 +173,16 @@ namespace PcInventory
                 w.WriteStartDocument();
                 w.WriteStartElement("map");
                 w.WriteAttributeString("format", "1");
+                foreach (var b in Buildings)
+                {
+                    w.WriteStartElement("building");
+                    A(w, "id", b.Id); A(w, "name", b.Name);
+                    w.WriteEndElement();
+                }
                 foreach (var f in Floors)
                 {
                     w.WriteStartElement("floor");
-                    A(w, "id", f.Id); A(w, "name", f.Name); A(w, "bg", f.Bg); A(w, "w", f.W); A(w, "h", f.H);
+                    A(w, "id", f.Id); A(w, "building", f.BuildingId); A(w, "name", f.Name); A(w, "bg", f.Bg); A(w, "w", f.W); A(w, "h", f.H);
                     w.WriteEndElement();
                 }
                 foreach (var r in Rooms)

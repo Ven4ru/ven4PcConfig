@@ -45,14 +45,8 @@ namespace PcInventory
             return pc != null && PcRooms.TryGetValue(pc.Key, out r) ? r : null;
         }
 
-        /// <summary>«2 этаж · 204», если этажей больше одного, иначе просто название кабинета.</summary>
-        public string RoomTitle(Room r)
-        {
-            if (r == null) return "";
-            if (Doc.Floors.Count < 2) return r.Name;
-            var f = Doc.FloorById(r.FloorId);
-            return (f != null ? f.Name + " · " : "") + r.Name;
-        }
+        /// <summary>«2 этаж · 204» (и здание впереди, если зданий несколько); при одном этаже — просто кабинет.</summary>
+        public string RoomTitle(Room r) => MapLayout.RoomTitle(Doc, r);
 
         public MapItem ItemByKey(string key)
         {
@@ -72,7 +66,8 @@ namespace PcInventory
 
         public static ResolvedMap Resolve(MapDoc doc, List<PcRecord> pcs)
         {
-            if (doc.Floors.Count == 0) doc.Floors.Add(new Floor { Id = doc.NewId("f"), Name = "1 этаж" });
+            doc.EnsureBuildings();
+            if (doc.Floors.Count == 0) doc.Floors.Add(new Floor { Id = doc.NewId("f"), BuildingId = doc.Buildings[0].Id, Name = "1 этаж" });
             var first = doc.Floors[0];
             var m = new ResolvedMap { Doc = doc };
             var sorted = Report.Sorted(pcs);
@@ -124,6 +119,38 @@ namespace PcInventory
             foreach (var r in doc.Rooms) PlaceItems(m, r);
             foreach (var f in doc.Floors) FitFloor(m, f);
             return m;
+        }
+
+        public static string RoomTitle(MapDoc doc, Room r)
+        {
+            if (r == null) return "";
+            if (doc.Floors.Count < 2 && doc.Buildings.Count < 2) return r.Name;
+            var f = doc.FloorById(r.FloorId);
+            return (f != null ? doc.FloorTitle(f) + " · " : "") + r.Name;
+        }
+
+        /// <summary>Перенести кабинет на другой этаж (в том числе другого здания) — в свободное место; значки едут с ним.</summary>
+        public static void MoveRoom(MapDoc doc, Room r, Floor to)
+        {
+            if (r.FloorId == to.Id) return;
+            r.FloorId = to.Id;
+            r.Auto = false;
+            r.X = 0; r.Y = 0;
+            PlaceRoom(doc, r);
+        }
+
+        /// <summary>Перенести значок в кабинет (на любом этаже). Место в кабинете — первая свободная ячейка.
+        /// Для ПК меняется его RoomId — запись ПК нужно сохранить (возвращается она, для принтера — null).</summary>
+        public static PcRecord MoveItem(MapDoc doc, MapItem it, Room to)
+        {
+            if (it.IsPc)
+            {
+                doc.Places.Remove(it.Key);
+                it.Pc["RoomId"] = to.Id;
+                return it.Pc;
+            }
+            doc.Places[it.Key] = new Place { Item = it.Key, RoomId = to.Id, X = -1, Y = -1 };
+            return null;
         }
 
         /// <summary>«Расставить заново»: забыть места значков и auto-кабинеты. Кабинеты админа остаются.</summary>
@@ -183,7 +210,7 @@ namespace PcInventory
             foreach (var i in items)
             {
                 Place p;
-                if (m.Doc.Places.TryGetValue(i.Key, out p) && p.RoomId == r.Id)
+                if (m.Doc.Places.TryGetValue(i.Key, out p) && p.RoomId == r.Id && p.X >= 0) // X < 0 — «в этом кабинете, место любое»
                 {
                     i.Rect = new Rectangle(r.X + p.X, r.Y + p.Y, CellW, CellH);
                     taken.Add(i.Rect);
