@@ -20,6 +20,16 @@ namespace PcInventory
         public double[] Widths;
         public readonly List<XCell[]> Rows = new List<XCell[]>();
         public bool Filter = true;
+        /// <summary>Закрепить первую строку (шапку таблицы).</summary>
+        public bool Freeze = true;
+        public readonly List<XImage> Images = new List<XImage>();
+    }
+
+    /// <summary>Картинка на листе: PNG, левый верхний угол в ячейке (Row, Col — с нуля), размер в пикселях.</summary>
+    class XImage
+    {
+        public byte[] Png;
+        public int Row, Col, W, H;
     }
 
     /// <summary>Минимальный генератор .xlsx (Office Open XML) без внешних библиотек.</summary>
@@ -39,6 +49,12 @@ namespace PcInventory
             ct.Append("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">");
             ct.Append("<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>");
             ct.Append("<Default Extension=\"xml\" ContentType=\"application/xml\"/>");
+            bool anyImages = false;
+            foreach (var s in sheets) if (s.Images.Count > 0) anyImages = true;
+            if (anyImages) ct.Append("<Default Extension=\"png\" ContentType=\"image/png\"/>");
+            for (int i = 0, d = 0; i < sheets.Count; i++)
+                if (sheets[i].Images.Count > 0)
+                    ct.Append("<Override PartName=\"/xl/drawings/drawing" + (++d) + ".xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawing+xml\"/>");
             ct.Append("<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>");
             ct.Append("<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>");
             for (int i = 0; i < sheets.Count; i++)
@@ -94,10 +110,41 @@ namespace PcInventory
             zip.Add("xl/_rels/workbook.xml.rels", rels.ToString());
 
             zip.Add("xl/styles.xml", Styles);
-            for (int i = 0; i < sheets.Count; i++) zip.Add("xl/worksheets/sheet" + (i + 1) + ".xml", SheetXml(sheets[i], i == 0));
+            int drawing = 0, media = 0;
+            for (int i = 0; i < sheets.Count; i++)
+            {
+                var s = sheets[i];
+                bool hasDr = s.Images.Count > 0;
+                zip.Add("xl/worksheets/sheet" + (i + 1) + ".xml", SheetXml(s, i == 0, hasDr));
+                if (!hasDr) continue;
+                drawing++;
+                zip.Add("xl/worksheets/_rels/sheet" + (i + 1) + ".xml.rels", RelsHead +
+                    "<Relationship Id=\"rId1\" Type=\"" + NsRel + "/drawing\" Target=\"../drawings/drawing" + drawing + ".xml\"/></Relationships>");
+                var dr = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+                dr.Append("<xdr:wsDr xmlns:xdr=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"" + NsRel + "\">");
+                var drRels = new StringBuilder(RelsHead);
+                for (int k = 0; k < s.Images.Count; k++)
+                {
+                    var im = s.Images[k];
+                    media++;
+                    zip.Add("xl/media/image" + media + ".png", im.Png);
+                    drRels.Append("<Relationship Id=\"rId" + (k + 1) + "\" Type=\"" + NsRel + "/image\" Target=\"../media/image" + media + ".png\"/>");
+                    long cx = im.W * 9525L, cy = im.H * 9525L; // EMU
+                    dr.Append("<xdr:oneCellAnchor><xdr:from><xdr:col>" + im.Col + "</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>" + im.Row + "</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>");
+                    dr.Append("<xdr:ext cx=\"" + cx + "\" cy=\"" + cy + "\"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id=\"" + (k + 2) + "\" name=\"Карта " + (k + 1) + "\"/>");
+                    dr.Append("<xdr:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed=\"rId" + (k + 1) + "\"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>");
+                    dr.Append("<xdr:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"" + cx + "\" cy=\"" + cy + "\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>");
+                }
+                dr.Append("</xdr:wsDr>");
+                drRels.Append("</Relationships>");
+                zip.Add("xl/drawings/drawing" + drawing + ".xml", dr.ToString());
+                zip.Add("xl/drawings/_rels/drawing" + drawing + ".xml.rels", drRels.ToString());
+            }
             zip.Finish();
             return ms.ToArray();
         }
+
+        const string RelsHead = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">";
 
         const string Border = "<left style=\"thin\"><color rgb=\"FFA6A6A6\"/></left><right style=\"thin\"><color rgb=\"FFA6A6A6\"/></right><top style=\"thin\"><color rgb=\"FFA6A6A6\"/></top><bottom style=\"thin\"><color rgb=\"FFA6A6A6\"/></bottom><diagonal/>";
 
@@ -131,14 +178,15 @@ namespace PcInventory
             "<cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles>" +
             "</styleSheet>";
 
-        static string SheetXml(XSheet s, bool selected)
+        static string SheetXml(XSheet s, bool selected, bool hasDrawing)
         {
             var sb = new StringBuilder(1 << 16);
             sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
             sb.Append("<worksheet xmlns=\"" + NsMain + "\" xmlns:r=\"" + NsRel + "\">");
-            sb.Append("<sheetViews><sheetView workbookViewId=\"0\"" + (selected ? " tabSelected=\"1\"" : "") + ">");
-            sb.Append("<pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/><selection pane=\"bottomLeft\" activeCell=\"A2\" sqref=\"A2\"/>");
-            sb.Append("</sheetView></sheetViews><sheetFormatPr defaultRowHeight=\"13.5\"/><cols>");
+            sb.Append("<sheetViews><sheetView workbookViewId=\"0\"" + (selected ? " tabSelected=\"1\"" : "") + (s.Freeze ? ">" : "/>"));
+            if (s.Freeze)
+                sb.Append("<pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/><selection pane=\"bottomLeft\" activeCell=\"A2\" sqref=\"A2\"/></sheetView>");
+            sb.Append("</sheetViews><sheetFormatPr defaultRowHeight=\"13.5\"/><cols>");
             for (int i = 0; i < s.Widths.Length; i++)
                 sb.Append("<col min=\"" + (i + 1) + "\" max=\"" + (i + 1) + "\" width=\"" + s.Widths[i].ToString(CultureInfo.InvariantCulture) + "\" customWidth=\"1\"/>");
             sb.Append("</cols><sheetData>");
@@ -175,6 +223,7 @@ namespace PcInventory
                 sb.Append("<autoFilter ref=\"A1:" + Col(s.Widths.Length - 1) + s.Rows.Count + "\"/>");
             sb.Append("<pageMargins left=\"0.4\" right=\"0.4\" top=\"0.5\" bottom=\"0.5\" header=\"0.3\" footer=\"0.3\"/>");
             sb.Append("<pageSetup orientation=\"landscape\" paperSize=\"9\" fitToHeight=\"0\"/>");
+            if (hasDrawing) sb.Append("<drawing r:id=\"rId1\"/>");
             sb.Append("</worksheet>");
             return sb.ToString();
         }

@@ -169,11 +169,11 @@ namespace PcInventory
         {
             "№ п.п.", "ID + PC Name", "Процессор", "ОЗУ", "Motherboard", "Graphics", "Накопитель", "Монитор",
             "Операционная система", "OS ver.", "Дата установки", "Антивирус", "Примечание",
-            "Отдел", "ФИО", "Модель ПК", "Серийный номер", "Активация Windows", "Офисный пакет", "Активация Office",
+            "Отдел", "Кабинет", "ФИО", "Модель ПК", "Серийный номер", "Активация Windows", "Офисный пакет", "Активация Office",
             "Антивирус: состояние и лицензия", "Состояние дисков", "Сборка ОС", "BIOS",
             "Пользователь (логин)", "Домен / раб. группа", "IP-адрес", "MAC-адрес", "Дата сбора",
         };
-        static readonly double[] MainWidths = { 6, 34, 30, 26, 26, 28, 42, 34, 28, 9, 12, 22, 20, 18, 26, 26, 18, 34, 30, 44, 44, 48, 16, 28, 22, 24, 16, 19, 16 };
+        static readonly double[] MainWidths = { 6, 34, 30, 26, 26, 28, 42, 34, 28, 9, 12, 22, 20, 18, 20, 26, 26, 18, 34, 30, 44, 44, 48, 16, 28, 22, 24, 16, 19, 16 };
 
         /// <summary>Сравнение номеров вида 1.2, 1.10, 2.1.</summary>
         public static int CompareId(string a, string b)
@@ -242,7 +242,9 @@ namespace PcInventory
             return t;
         }
 
-        public static byte[] Build(List<PcRecord> recs)
+        /// <param name="map">карта: из неё колонка «Кабинет»; null — колонка пустая</param>
+        /// <param name="mapDir">папка подложек; mapSheet — добавить лист «Карта» с картинками этажей</param>
+        public static byte[] Build(List<PcRecord> recs, ResolvedMap map = null, string mapDir = null, bool mapSheet = false)
         {
             // группировка по отделам
             var order = DeptOrder(recs);
@@ -285,7 +287,7 @@ namespace PcInventory
                     {
                         new XCell(n, Xlsx.Center), T(Title(r)), T(r["Cpu"]), T(r["Ram"]), T(r["Board"]), T(r["Gpu"]), T(r["Disk"]),
                         T(r["Monitor"]), T(r["Os"]), new XCell(r["OsVer"], Xlsx.Center), new XCell(inst, Xlsx.Date), T(r["Av"]), T(r["Note"]),
-                        T(r["Dept"]), T(r["Fio"]), T(r["PcModel"]), T(r["Serial"]), G(r["WinAct"], r["WinActSt"]), T(r["Office"]),
+                        T(r["Dept"]), T(map != null ? map.RoomTitle(map.RoomOfPc(r)) : ""), T(r["Fio"]), T(r["PcModel"]), T(r["Serial"]), G(r["WinAct"], r["WinActSt"]), T(r["Office"]),
                         G(r["OfficeAct"], r["OfficeActSt"]), G(r["AvAct"], r["AvActSt"]), G(r["DiskHealth"], r["DiskHealthSt"]), T(r["OsBuild"]), T(r["Bios"]),
                         T(r["User"]), T(r["Domain"]), T(r["Ip"]), T(r["Mac"]), new XCell(coll, Xlsx.DateTimeSt),
                     });
@@ -322,7 +324,29 @@ namespace PcInventory
                     }
                 }
 
-            return Xlsx.Build(new List<XSheet> { Summary(order, groups), main, lic, parts, soft });
+            var sheets = new List<XSheet> { Summary(order, groups), main, lic, parts, soft };
+            if (mapSheet && map != null) sheets.Add(MapSheet(map, mapDir));
+            return Xlsx.Build(sheets);
+        }
+
+        /// <summary>Лист «Карта»: по этажу — строка с названием и картинка этажа под ней (светлая палитра, как PNG).</summary>
+        static XSheet MapSheet(ResolvedMap map, string mapDir)
+        {
+            var sh = new XSheet { Name = "Карта", Widths = new double[] { 60 }, Filter = false, Freeze = false };
+            const int RowPx = 18, MaxW = 1100;
+            foreach (var f in map.Doc.Floors)
+            {
+                if (sh.Rows.Count > 0) sh.Rows.Add(new XCell[0]);
+                sh.Rows.Add(new[] { new XCell(f.Name, Xlsx.Group) });
+                using (var bmp = MapRenderer.Render(map, f, mapDir, MapPalette.Light, true))
+                {
+                    int w = bmp.Width, h = bmp.Height;
+                    if (w > MaxW) { h = h * MaxW / w; w = MaxW; }
+                    sh.Images.Add(new XImage { Png = MapRenderer.Png(bmp), Row = sh.Rows.Count, Col = 0, W = w, H = h });
+                    for (int k = 0; k < (h + RowPx - 1) / RowPx + 1; k++) sh.Rows.Add(new XCell[0]);
+                }
+            }
+            return sh;
         }
 
         static XCell T(string s) => new XCell(s ?? "", Xlsx.Text);

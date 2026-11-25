@@ -28,12 +28,49 @@ namespace PcInventory
 
         public string XlsxPath => Path.Combine(BaseDir, Program.XlsxName);
         public string DataDir => Path.Combine(BaseDir, Program.DataDirName);
+        public string MapPath => Path.Combine(DataDir, "карта.xml");
+        public string MapDir => Path.Combine(DataDir, "карта");
+        public string SettingsPath => Path.Combine(DataDir, "настройки.xml");
+
+        /// <summary>Карта помещений и настройки — лежат в папке данных рядом с XML компьютеров.</summary>
+        public MapDoc Map = new MapDoc();
+        public AppSettings Settings = new AppSettings();
+        /// <summary>Ошибка чтения карты (файл был повреждён и отложен в сторону) — показывается в окне.</summary>
+        public string MapError;
 
         public void Load()
         {
             LoadErrors.Clear();
             All = Store.LoadAll(LoadErrors);
+            Map = MapDoc.Load(MapPath, out MapError);
+            Settings = AppSettings.Load(SettingsPath);
         }
+
+        /// <summary>Раскладка карты по текущим данным. Новые кабинеты отделов сразу записываются в карту,
+        /// чтобы при следующем запуске они стояли на тех же местах.</summary>
+        public ResolvedMap ResolveMap()
+        {
+            string before = Signature(Map);
+            var m = MapLayout.Resolve(Map, All);
+            if (Signature(Map) != before && All.Count > 0)
+                try { SaveMap(); } catch { } // карта на флешке только для чтения — покажем без сохранения
+            return m;
+        }
+
+        static string Signature(MapDoc d)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var f in d.Floors) sb.Append(f.Id).Append(f.W).Append('x').Append(f.H).Append(';');
+            foreach (var r in d.Rooms) sb.Append(r.Id).Append(r.X).Append(',').Append(r.Y).Append(',').Append(r.W).Append(',').Append(r.H).Append(';');
+            return sb.ToString();
+        }
+
+        public void SaveMap() => Map.Save(MapPath);
+
+        public void SaveSettings() => Settings.Save(SettingsPath);
+
+        /// <summary>Сохранить запись другого ПК (например, перетащили на карте в другой кабинет).</summary>
+        public void SaveRecord(PcRecord r) => Store.Save(r);
 
         /// <summary>Перечитать папку данных, сохранив собранную запись этого ПК.</summary>
         public void Reload()
@@ -74,7 +111,7 @@ namespace PcInventory
                 }
             // запись переименованного ПК пишется в его прежний файл — иначе в реестре появится вторая строка
             if (prev != null && prev.Key != "") rec.Key = prev.Key;
-            foreach (var k in new[] { "Dept", "ArmId", "Fio", "Note" })
+            foreach (var k in new[] { "Dept", "ArmId", "Fio", "Note", "RoomId" })
                 rec[k] = prev != null ? prev[k] : "";
             if (prev == null && rec["Fio"] == "") rec["Fio"] = rec["UserFullName"];
 
@@ -113,7 +150,7 @@ namespace PcInventory
         public string BuildXlsx(out bool busy)
         {
             busy = false;
-            byte[] xlsx = Report.Build(All);
+            byte[] xlsx = Report.Build(All, ResolveMap(), MapDir, Settings.XlsxSheet);
             string path = XlsxPath;
             try { File.WriteAllBytes(path, xlsx); }
             catch (IOException)

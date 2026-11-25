@@ -744,11 +744,7 @@ namespace PcInventory
             foreach (var p in Wmi.Cim("SELECT * FROM Win32_Printer"))
             {
                 string n = Wmi.S(p, "Name");
-                string l = n.ToLowerInvariant();
-                bool skip = false;
-                foreach (var x in new[] { "microsoft print to pdf", "xps document writer", "onenote", "fax", "факс", "send to", "отправить в", "pdf24", "anydesk" })
-                    if (l.Contains(x)) skip = true;
-                if (skip || n == "") continue;
+                if (n == "" || PcInventory.Printers.IsVirtual(n)) continue;
                 Part("Принтер", n, Util.Join("; ", new[] {
                     Wmi.S(p, "DriverName") != "" ? "драйвер " + Wmi.S(p, "DriverName") : "",
                     Wmi.S(p, "PortName") != "" ? "порт " + Wmi.S(p, "PortName") : "",
