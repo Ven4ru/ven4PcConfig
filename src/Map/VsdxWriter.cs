@@ -207,7 +207,7 @@ namespace PcInventory
             {
                 sb.Append("<Shape ID=\"" + id++ + "\" NameU=\"Background\" Name=\"Подложка\" Type=\"Foreign\" LineStyle=\"0\" FillStyle=\"0\" TextStyle=\"0\">");
                 sb.Append(Xform(f, new Rectangle(0, 0, f.W, f.H)));
-                sb.Append(C("ImgOffsetX", 0) + C("ImgOffsetY", 0) + C("ImgWidth", f.W / Px) + C("ImgHeight", f.H / Px) + C("LinePattern", 0) + C("FillPattern", 0) +
+                sb.Append(Img(f.W / Px, f.H / Px) + C("LinePattern", 0) + C("FillPattern", 0) +
                           CS("LayerMember", "0") + C("LockSelect", 1));
                 sb.Append("<ForeignData ForeignType=\"Bitmap\" CompressionType=\"PNG\"><Rel r:id=\"rId1\"/></ForeignData></Shape>");
             }
@@ -248,7 +248,7 @@ namespace PcInventory
                 var r = MapText.IconRect(i);
                 sb.Append("<Shape ID=\"" + id + "\" NameU=\"" + (i.IsPc ? "PC" : "Printer") + "." + id++ + "\" Name=\"" + Esc(i.Line1) + "\" Type=\"Foreign\" LineStyle=\"0\" FillStyle=\"0\" TextStyle=\"0\">");
                 sb.Append(Xform(f, r));
-                sb.Append(C("ImgOffsetX", 0) + C("ImgOffsetY", 0) + C("ImgWidth", r.Width / Px) + C("ImgHeight", r.Height / Px) +
+                sb.Append(Img(r.Width / Px, r.Height / Px) +
                           // заливка и рамка — цветом кабинета: программы, которые не умеют «без заливки» у картинки, не рисуют квадрат
                           CS("FillForegnd", Hex(P.Room)) + CS("FillBkgnd", Hex(P.Room)) + CS("LineColor", Hex(P.Room)) +
                           C("LinePattern", 0) + C("FillPattern", 0) + CS("LayerMember", "2") + CS("Comment", MapText.Tooltip(i)) + C("LockAspect", 1));
@@ -321,6 +321,12 @@ namespace PcInventory
             "<Row T=\"RelLineTo\" IX=\"3\">" + C("X", 1) + C("Y", 1) + "</Row>" +
             "<Row T=\"RelLineTo\" IX=\"4\">" + C("X", 0) + C("Y", 1) + "</Row>" +
             "<Row T=\"RelLineTo\" IX=\"5\">" + C("X", 0) + C("Y", 0) + "</Row></Section>";
+
+        /// <summary>Картинка привязана к размеру фигуры формулами, как у вставленных в Visio рисунков:
+        /// фигуру можно уменьшать и растягивать, и значок меняется вместе с ней.</summary>
+        static string Img(double w, double h) =>
+            "<Cell N=\"ImgOffsetX\" V=\"0\" F=\"ImgWidth*0\"/><Cell N=\"ImgOffsetY\" V=\"0\" F=\"ImgHeight*0\"/>" +
+            "<Cell N=\"ImgWidth\" V=\"" + D(w) + "\" F=\"Width*1\"/><Cell N=\"ImgHeight\" V=\"" + D(h) + "\" F=\"Height*1\"/>";
 
         static string C(string n, double v, string unit = null) =>
             "<Cell N=\"" + n + "\" V=\"" + D(v) + "\"" + (unit != null ? " U=\"" + unit + "\"" : "") + "/>";

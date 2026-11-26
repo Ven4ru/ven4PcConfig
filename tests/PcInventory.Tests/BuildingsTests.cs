@@ -173,6 +173,9 @@ namespace PcInventory.Tests
                 Assert.Null(sh.SelectSingleNode("v:Text", ns));
                 var comment = (XmlElement)sh.SelectSingleNode("v:Cell[@N='Comment']", ns);
                 Assert.Contains(prefix == "PC." ? "A" : "Canon", comment.GetAttribute("V"));
+                // картинка следует за размером фигуры — значок можно уменьшать и растягивать в Visio
+                Assert.Equal("Width*1", ((XmlElement)sh.SelectSingleNode("v:Cell[@N='ImgWidth']", ns)).GetAttribute("F"));
+                Assert.Equal("Height*1", ((XmlElement)sh.SelectSingleNode("v:Cell[@N='ImgHeight']", ns)).GetAttribute("F"));
             }
             Assert.Contains("Процессор", ((XmlElement)page3.SelectSingleNode("//v:Shape[starts-with(@NameU,'PC.')]/v:Cell[@N='Comment']", ns)).GetAttribute("V"));
         }
