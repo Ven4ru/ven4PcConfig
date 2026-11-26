@@ -48,8 +48,8 @@ namespace PcInventory.Gui
         readonly Card cardChanges = new Card("Изменения с прошлого сбора", Theme.IcoRefresh);
         readonly KvList kvChanges = new KvList { KeyWidth = 120, Separators = true };
         readonly Card cardArm = new Card("Карточка АРМ", Theme.IcoCard);
-        readonly Caption capDept = new Caption("Отдел"), capRoom = new Caption("Кабинет", " (пусто — кабинет отдела)"), capId = new Caption("Номер АРМ"), capFio = new Caption("ФИО сотрудника"), capNote = new Caption("Примечание", " (необязательно)");
-        readonly InputBox inDept = new InputBox(true), inRoom = new InputBox(true), inId = new InputBox(false), inFio = new InputBox(false), inNote = new InputBox(false);
+        readonly Caption capBuilding = new Caption("Здание"), capDept = new Caption("Отдел"), capRoom = new Caption("Кабинет", " (пусто — кабинет отдела)"), capId = new Caption("Номер АРМ"), capFio = new Caption("ФИО сотрудника"), capNote = new Caption("Примечание", " (необязательно)");
+        readonly InputBox inBuilding = new InputBox(true), inDept = new InputBox(true), inRoom = new InputBox(true), inId = new InputBox(false), inFio = new InputBox(false), inNote = new InputBox(false);
         readonly V4Button btnSave = new V4Button("Сохранить в реестр", Theme.IcoSave, true);
         readonly Para armHint = new Para("");
         readonly Card cardMsg = new Card("Сообщения", Theme.IcoInfo);
@@ -262,16 +262,17 @@ namespace PcInventory.Gui
             pgPc.Controls.Add(cardChanges);
             kvInfo.KeyWidth = 140;
             kvLic.KeyWidth = 140;
-            foreach (Control c in new Control[] { capDept, inDept, capRoom, inRoom, capId, inId, capFio, inFio, capNote, inNote, btnSave, armHint })
+            foreach (Control c in new Control[] { capBuilding, inBuilding, capDept, inDept, capRoom, inRoom, capId, inId, capFio, inFio, capNote, inNote, btnSave, armHint })
                 cardArm.Controls.Add(c);
+            inBuilding.Placeholder = "Например: главный корпус, склад";
             cardMsg.Controls.Add(kvMsg);
             cardMsg.Controls.Add(btnAdmin);
             btnAdmin.Visible = false;
             btnAdmin.Click += (o, e) => RestartAsAdmin();
-            // порядок Tab: отдел → кабинет → номер → ФИО → примечание → сохранить
+            // порядок Tab: здание → отдел → кабинет → номер → ФИО → примечание → сохранить
             int ti = 0;
-            foreach (Control c in new Control[] { inDept, inRoom, inId, inFio, inNote, btnSave }) c.TabIndex = ti++;
-            foreach (Control c in new Control[] { capDept, capRoom, capId, capFio, capNote, armHint }) c.TabStop = false;
+            foreach (Control c in new Control[] { inBuilding, inDept, inRoom, inId, inFio, inNote, btnSave }) c.TabIndex = ti++;
+            foreach (Control c in new Control[] { capBuilding, capDept, capRoom, capId, capFio, capNote, armHint }) c.TabStop = false;
             cardArm.TabIndex = 0;
             cardInfo.TabStop = false;
             btnRecollect.TabIndex = 10;
@@ -288,7 +289,7 @@ namespace PcInventory.Gui
             btnRecollect.Click += (o, e) => StartCollect();
             inDept.Picked += (o, e) => SuggestId(true);
             inDept.Box.Leave += (o, e) => SuggestId(false);
-            foreach (var ib in new[] { inDept, inRoom, inId, inFio, inNote })
+            foreach (var ib in new[] { inBuilding, inDept, inRoom, inId, inFio, inNote })
                 ib.Box.KeyDown += (o, e) => { if (e.KeyCode == Keys.Enter && btnSave.Enabled) { e.SuppressKeyPress = true; SaveArm(); } };
             SetMessages(new List<KvList.Row> { new KvList.Row("", "Сведения ещё собираются — подождите несколько секунд.", "") });
         }
@@ -357,7 +358,7 @@ namespace PcInventory.Gui
 
             // правая колонка
             int rx = pad + left + gap, ri = right - cardArm.Pad * 2, ry = cardArm.ContentTop;
-            foreach (var pair in new[] { new Control[] { capDept, inDept }, new Control[] { capRoom, inRoom }, new Control[] { capId, inId }, new Control[] { capFio, inFio }, new Control[] { capNote, inNote } })
+            foreach (var pair in new[] { new Control[] { capBuilding, inBuilding }, new Control[] { capDept, inDept }, new Control[] { capRoom, inRoom }, new Control[] { capId, inId }, new Control[] { capFio, inFio }, new Control[] { capNote, inNote } })
             {
                 pair[0].SetBounds(cardArm.Pad, ry, ri, Theme.S(20));
                 pair[1].SetBounds(cardArm.Pad, ry + Theme.S(24), ri, Theme.S(34));
@@ -589,6 +590,9 @@ namespace PcInventory.Gui
             RefreshRooms();
             var room = s.Map.RoomById(r["RoomId"]);
             inRoom.Text = room != null ? RoomTitle(room) : "";
+            // здание: из карточки, иначе — здание кабинета ПК на карте
+            var rb = s.Map.BuildingOf(room);
+            inBuilding.Text = r["Building"] != "" ? r["Building"] : rb != null && s.Map.Buildings.Count > 1 ? rb.Name : "";
             lastDept = r["Dept"];
             inId.Text = r["ArmId"] != "" ? r["ArmId"] : Report.SuggestId(others, r["Dept"]);
             inFio.Text = r["Fio"];
@@ -659,6 +663,10 @@ namespace PcInventory.Gui
         /// <summary>Список кабинетов в карточке АРМ; если ПК перетащили на карте — и его кабинет.</summary>
         void RefreshRooms()
         {
+            var names = new List<string>();
+            foreach (var b in s.Map.Buildings) if (!names.Contains(b.Name)) names.Add(b.Name);
+            foreach (var p in s.All) if (p["Building"] != "" && s.Map.BuildingByName(p["Building"]) == null && !names.Contains(p["Building"])) names.Add(p["Building"]);
+            inBuilding.SetItems(names);
             var items = new List<string>();
             foreach (var room in s.Map.Rooms) if (!room.Auto) items.Add(RoomTitle(room));
             items.Sort(StringComparer.CurrentCultureIgnoreCase);
@@ -671,17 +679,26 @@ namespace PcInventory.Gui
         }
 
         /// <summary>Текст поля «Кабинет» → id кабинета. Пусто — кабинет отдела; новое название — новый кабинет на первом этаже.</summary>
-        string RoomIdFor(string text)
+        /// <summary>Текст поля «Кабинет» → id кабинета в выбранном здании. Пусто — кабинет отдела;
+        /// новое название — новый кабинет на первом этаже этого здания.</summary>
+        string RoomIdFor(string text, string buildingName)
         {
             text = text.Trim();
             if (text == "") return "";
-            foreach (var room in s.Map.Rooms)
-                if (string.Equals(RoomTitle(room), text, StringComparison.CurrentCultureIgnoreCase)) return room.Id;
-            foreach (var room in s.Map.Rooms)
-                if (string.Equals(room.Name, text, StringComparison.CurrentCultureIgnoreCase)) return room.Id;
             s.Map.EnsureBuildings();
-            if (s.Map.Floors.Count == 0) s.Map.Floors.Add(new Floor { Id = s.Map.NewId("f"), BuildingId = s.Map.Buildings[0].Id, Name = "1 этаж" });
-            var r = new Room { Id = s.Map.NewId("r"), FloorId = s.Map.Floors[0].Id, Name = text, W = MapLayout.MinRoomW, H = MapLayout.Head + MapLayout.CellH * 2 + MapLayout.Gap * 3 };
+            var building = buildingName.Trim() != "" ? s.Map.EnsureBuilding(buildingName) : null;
+            // сначала — кабинет в выбранном здании, потом — где угодно (кабинет из списка с «Здание · этаж · …»)
+            foreach (var pass in new[] { true, false })
+                foreach (var room in s.Map.Rooms)
+                {
+                    if (pass && building != null && s.Map.BuildingOf(room) != building) continue;
+                    if (string.Equals(RoomTitle(room), text, StringComparison.CurrentCultureIgnoreCase) ||
+                        string.Equals(room.Name, text, StringComparison.CurrentCultureIgnoreCase)) return room.Id;
+                }
+            if (building == null) building = s.Map.Buildings[0];
+            var floors = s.Map.FloorsOf(building);
+            if (floors.Count == 0) { s.Map.Floors.Add(new Floor { Id = s.Map.NewId("f"), BuildingId = building.Id, Name = "1 этаж" }); floors = s.Map.FloorsOf(building); }
+            var r = new Room { Id = s.Map.NewId("r"), FloorId = floors[0].Id, Name = text, W = MapLayout.MinRoomW, H = MapLayout.Head + MapLayout.CellH * 2 + MapLayout.Gap * 3 };
             s.Map.Rooms.Add(r);
             MapLayout.PlaceRoom(s.Map, r);
             s.SaveMap();
@@ -692,7 +709,14 @@ namespace PcInventory.Gui
         {
             if (s.Current == null || busy) return;
             var r = s.Current;
-            try { r["RoomId"] = RoomIdFor(inRoom.Text); }
+            try
+            {
+                r["Building"] = inBuilding.Text.Trim();
+                r["RoomId"] = RoomIdFor(inRoom.Text, r["Building"]);
+                // кабинет из другого здания — здание в карточке главнее: ПК встанет в кабинет своего отдела в этом здании
+                var chosen = s.Map.RoomById(r["RoomId"]);
+                if (chosen != null && r["Building"] != "" && s.Map.BuildingOf(chosen) != s.Map.BuildingByName(r["Building"])) r["RoomId"] = "";
+            }
             catch (Exception ex) { SetMessages(new List<KvList.Row> { new KvList.Row("", "Не удалось сохранить карту: " + ex.Message, Collector.Bad) }); return; }
             r["Dept"] = inDept.Text.Trim();
             r["ArmId"] = inId.Text.Trim();

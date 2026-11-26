@@ -68,6 +68,8 @@ namespace PcInventory.Gui
             // принтеры: общий сетевой в бухгалтерии, локальный в кадрах, сетевой по IP на складе
             foreach (var r in s.All)
             {
+                r["Building"] = r["Dept"] == "Склад" ? "Склад" : "Главный корпус";
+                if (r.Key == "BUH-01") r.Parts.Add(new[] { "Принтер", "HP LaserJet 1020", "драйвер HP LaserJet 1020; порт USB002", "" }); // драйвер от сданного принтера
                 if (r["Dept"] == "Бухгалтерия") r.Parts.Add(new[] { "Принтер", @"\\srv-01\HP-Buh", @"драйвер HP Universal Printing PCL 6; порт \\srv-01\HP-Buh; сетевой", "" });
                 if (r.Key == "OK-02") r.Parts.Add(new[] { "Принтер", "Canon LBP2900", "драйвер Canon LBP2900; порт USB001", "" });
                 if (r["Dept"] == "Склад") r.Parts.Add(new[] { "Принтер", "Kyocera ECOSYS M2040dn", "драйвер Kyocera ECOSYS M2040dn KX; порт IP_10.0.12.80", "" });
@@ -84,6 +86,7 @@ namespace PcInventory.Gui
             m.Rooms.Add(new Room { Id = "r2", FloorId = "f2", Name = "Серверная", X = 690, Y = 70, W = 300, H = 230 });
             m.Rooms.Add(new Room { Id = "r3", FloorId = "f3", Name = "Приёмка", Dept = "Склад", X = 40, Y = 40, W = 560, H = 200 });
             s.DemoBg["f2"] = Plan(1600, 900);
+            m.Hidden["pr:BUH-01|hp laserjet 1020"] = "HP LaserJet 1020"; // убран с карты (кнопка «Скрытые (1)»)
             return s;
         }
 

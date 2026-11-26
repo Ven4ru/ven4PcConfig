@@ -12,6 +12,10 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
   <ItemGroup>
+    <!-- у программы общие статические настройки (тема, правила программ, кэш значков) — проверки идут по очереди -->
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\PcInventory.csproj" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Xml" />

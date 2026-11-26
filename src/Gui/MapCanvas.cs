@@ -36,7 +36,7 @@ namespace PcInventory.Gui
         /// <summary>Карта изменилась (кабинет, значок, ПК) — страница пересчитывает раскладку и обновляет остальное окно.</summary>
         public event EventHandler Changed;
         public event EventHandler<RoomEventArgs> EditRoom, DeleteRoom;
-        public event EventHandler<ItemEventArgs> OpenItem;
+        public event EventHandler<ItemEventArgs> OpenItem, DeletePc;
 
         public class RoomEventArgs : EventArgs { public Room Room; }
         public class ItemEventArgs : EventArgs { public MapItem Item; }
@@ -81,7 +81,7 @@ namespace PcInventory.Gui
                 var target = f;
                 move.DropDownItems.Add(Item(Map.Doc.Buildings.Count > 1 ? Map.Doc.FloorTitle(f) : f.Name, (s, e) =>
                 {
-                    MapLayout.MoveRoom(Map.Doc, r, target);
+                    foreach (var pc in MapLayout.MoveRoom(Map, r, target)) SaveRecord(pc);
                     selected = null;
                     Commit();
                 }));
@@ -92,7 +92,18 @@ namespace PcInventory.Gui
             roomMenu.Show(this, at);
         }
 
-        /// <summary>Меню значка: сведения о ПК и перенос в любой кабинет любого этажа.</summary>
+        /// <summary>Записать ПК после правки на карте; у этого компьютера — и в его собранную запись.</summary>
+        void SaveRecord(PcRecord pc)
+        {
+            try { S.SaveRecord(pc); } catch (Exception ex) { MessageBox.Show(this, "Не удалось сохранить ПК: " + ex.Message, "Карта"); }
+            if (S.Current != null && S.Current.Key == pc.Key && S.Current != pc)
+            {
+                S.Current["RoomId"] = pc["RoomId"];
+                S.Current["Building"] = pc["Building"];
+            }
+        }
+
+        /// <summary>Меню значка: сведения, перенос в любой кабинет, убрать с карты, удалить ПК из реестра.</summary>
         void ShowItemMenu(MapItem it, Point at)
         {
             itemMenu.Items.Clear();
@@ -106,17 +117,22 @@ namespace PcInventory.Gui
                     var mi = Item(Map.RoomTitle(r), (s, e) =>
                     {
                         var pc = MapLayout.MoveItem(Map.Doc, it, target);
-                        if (pc != null)
-                        {
-                            try { S.SaveRecord(pc); } catch (Exception ex) { MessageBox.Show(this, "Не удалось сохранить ПК: " + ex.Message, "Карта"); }
-                            if (S.Current != null && S.Current.Key == pc.Key) S.Current["RoomId"] = target.Id;
-                        }
+                        if (pc != null) SaveRecord(pc);
                         Commit();
                     });
                     if (r == it.Room) { mi.Enabled = false; mi.Text += " — сейчас здесь"; }
                     move.DropDownItems.Add(mi);
                 }
             itemMenu.Items.Add(move);
+            itemMenu.Items.Add(new ToolStripSeparator());
+            // лишний значок (принтер от старого драйвера, ПК, которого уже нет) — убрать; вернуть можно кнопкой «Скрытые»
+            itemMenu.Items.Add(Item(it.IsPc ? "Убрать компьютер с карты" : "Убрать принтер с карты", (s, e) =>
+            {
+                Map.Doc.Hidden[it.Key] = it.IsPc ? Report.ShortTitle(it.Pc) : it.Printer.Name;
+                selected = null;
+                Commit();
+            }));
+            if (it.IsPc) itemMenu.Items.Add(Item("Удалить компьютер из реестра…", (s, e) => { if (DeletePc != null) DeletePc(this, new ItemEventArgs { Item = it }); }));
             itemMenu.Show(this, at);
         }
 
@@ -148,7 +164,7 @@ namespace PcInventory.Gui
         {
             if (Floor == null || Map == null) return;
             var c = MapRenderer.Content(Map, Floor);
-            var area = bg != null || c.IsEmpty ? new Rectangle(0, 0, Floor.W, Floor.H) : Rectangle.Inflate(c, 24, 24);
+            var area = bg != null || c.IsEmpty ? new Rectangle(0, 0, Floor.W, Floor.H) : Rectangle.Inflate(MapRenderer.Frame(Map, Floor, true), 12, 12);
             float sc = Theme.Scale;
             float z = Math.Min((Width - 32) / (area.Width * sc), (Height - 32) / (area.Height * sc));
             zoom = Math.Max(0.5f, Math.Min(1.25f, z));
@@ -168,7 +184,9 @@ namespace PcInventory.Gui
             var st = g.Save();
             g.TranslateTransform(offset.X, offset.Y);
             g.ScaleTransform(K, K);
-            MapRenderer.DrawFloor(g, Map, Floor, MapPalette.Dark, bg, S != null && S.Current != null ? "pc:" + S.Current.Key : null, selected, hover);
+            // рамка здания: с планом-подложкой — на весь этаж, без неё — вокруг кабинетов (растёт вместе с ними)
+            MapRenderer.DrawFloor(g, Map, Floor, MapPalette.Dark, bg, S != null && S.Current != null ? "pc:" + S.Current.Key : null, selected, hover,
+                MapRenderer.Frame(Map, Floor, bg == null));
             g.Restore(st);
             using (var p = new Pen(Theme.Border)) g.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
             // подсказка по управлению в углу
@@ -291,8 +309,7 @@ namespace PcInventory.Gui
             if (it.IsPc && it.Pc["RoomId"] != room.Id && room != Map.RoomOfPc(it.Pc))
             {
                 it.Pc["RoomId"] = room.Id;
-                try { S.SaveRecord(it.Pc); } catch (Exception ex) { MessageBox.Show(this, "Не удалось сохранить ПК: " + ex.Message, "Карта"); }
-                if (S.Current != null && S.Current.Key == it.Pc.Key) S.Current["RoomId"] = room.Id;
+                SaveRecord(it.Pc);
             }
             Commit();
         }

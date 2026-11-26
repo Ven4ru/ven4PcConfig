@@ -143,6 +143,19 @@ namespace PcInventory
             return a;
         }
 
+        /// <summary>Убрать ПК из реестра: файл не стирается, а переносится в папку «удалённые» (вернуть — переложить обратно).</summary>
+        public string Remove(PcRecord r)
+        {
+            string src = Path.Combine(dir, r.Key + ".xml");
+            if (!File.Exists(src)) return null;
+            string trash = Path.Combine(dir, "удалённые");
+            Directory.CreateDirectory(trash);
+            string dst = Path.Combine(trash, r.Key + ".xml");
+            if (File.Exists(dst)) dst = Path.Combine(trash, r.Key + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".xml");
+            File.Move(src, dst);
+            return dst;
+        }
+
         public string Save(PcRecord r)
         {
             Directory.CreateDirectory(dir);

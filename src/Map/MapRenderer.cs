@@ -64,16 +64,14 @@ namespace PcInventory
             using (var bg = LoadBg(mapDir, f))
             {
                 var area = new Rectangle(0, 0, f.W, f.H);
-                if (crop && bg == null)
-                {
-                    var c = Content(m, f);
-                    if (!c.IsEmpty) area = Rectangle.Intersect(Rectangle.Inflate(c, MapLayout.Margin, MapLayout.Margin), area);
-                }
+                bool cut = crop && bg == null && !Content(m, f).IsEmpty;
+                var frame = Frame(m, f, cut);
+                if (cut) area = Rectangle.Intersect(Rectangle.Inflate(frame, 12, 12), area);
                 var bmp = new Bitmap(area.Width, area.Height);
                 using (var g = Graphics.FromImage(bmp))
                 {
                     g.TranslateTransform(-area.X, -area.Y);
-                    DrawFloor(g, m, f, p, bg, null, null, null);
+                    DrawFloor(g, m, f, p, bg, null, null, null, frame);
                 }
                 return bmp;
             }
@@ -88,7 +86,23 @@ namespace PcInventory
             return c;
         }
 
+        /// <summary>Рамка здания: на всё поле этажа; для обрезанной картинки (PNG, Excel) — вокруг кабинетов.</summary>
+        public static Rectangle Frame(ResolvedMap m, Floor f, bool aroundContent)
+        {
+            if (aroundContent)
+            {
+                var c = Content(m, f);
+                if (!c.IsEmpty) return new Rectangle(c.X - 20, c.Y - FrameHead - 12, c.Width + 40, c.Height + FrameHead + 32);
+            }
+            return new Rectangle(FrameInset, FrameInset, f.W - FrameInset * 2, f.H - FrameInset * 2);
+        }
+
+        public const int FrameInset = 10, FrameHead = 24;
+
         public static void DrawFloor(Graphics g, ResolvedMap m, Floor f, MapPalette p, Image bg, string currentKey, string selectedKey, string hoverKey)
+            => DrawFloor(g, m, f, p, bg, currentKey, selectedKey, hoverKey, Frame(m, f, false));
+
+        public static void DrawFloor(Graphics g, ResolvedMap m, Floor f, MapPalette p, Image bg, string currentKey, string selectedKey, string hoverKey, Rectangle frame)
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
@@ -97,9 +111,23 @@ namespace PcInventory
             using (var b = new SolidBrush(p.Floor)) g.FillRectangle(b, area);
             if (bg != null) DrawFaded(g, bg, area, p.BgAlpha);
             using (var pen = new Pen(p.FloorBorder)) g.DrawRectangle(pen, 0, 0, f.W - 1, f.H - 1);
+            DrawBuilding(g, m, f, p, frame);
 
             foreach (var r in m.RoomsOn(f)) DrawRoom(g, m, r, p, selectedKey == "room:" + r.Id);
             foreach (var i in m.ItemsOn(f)) DrawItem(g, i, p, i.Key == currentKey, i.Key == selectedKey, i.Key == hoverKey);
+        }
+
+        /// <summary>Здание — рамка на всё поле с названием и этажом сверху; кабинеты стоят внутри.</summary>
+        static void DrawBuilding(Graphics g, ResolvedMap m, Floor f, MapPalette p, Rectangle frame)
+        {
+            var b = m.Doc.BuildingById(f.BuildingId);
+            string title = (b != null ? b.Name : "") + (f.Name != "" ? " · " + f.Name : "");
+            using (var path = Round(frame, 8))
+            using (var pen = new Pen(Color.FromArgb(200, p.Accent), 1.5f) { DashStyle = DashStyle.Dash })
+                g.DrawPath(pen, path);
+            var sf = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter, LineAlignment = StringAlignment.Center };
+            using (var br = new SolidBrush(p.Accent))
+                g.DrawString(title, FRoom, br, new RectangleF(frame.X + 12, frame.Y + 2, frame.Width - 24, FrameHead), sf);
         }
 
         static void DrawFaded(Graphics g, Image img, Rectangle dest, float alpha)

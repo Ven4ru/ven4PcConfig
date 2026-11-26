@@ -9,7 +9,7 @@ namespace PcInventory
         public const string XlsxName = "Реестр_АРМ.xlsx";
         public const string DataDirName = "ven4PcConfig_данные";
 
-        public static readonly string Version = "1.4.0";
+        public static readonly string Version = "1.5.0";
 
         [STAThread]
         static int Main(string[] args)
@@ -169,11 +169,11 @@ namespace PcInventory
         {
             "№ п.п.", "ID + PC Name", "Процессор", "ОЗУ", "Motherboard", "Graphics", "Накопитель", "Монитор",
             "Операционная система", "OS ver.", "Дата установки", "Антивирус", "Примечание",
-            "Отдел", "Кабинет", "ФИО", "Модель ПК", "Серийный номер", "Активация Windows", "Офисный пакет", "Активация Office",
+            "Отдел", "Здание", "Кабинет", "ФИО", "Модель ПК", "Серийный номер", "Активация Windows", "Офисный пакет", "Активация Office",
             "Антивирус: состояние и лицензия", "Состояние дисков", "Сборка ОС", "BIOS",
             "Пользователь (логин)", "Домен / раб. группа", "IP-адрес", "MAC-адрес", "Дата сбора",
         };
-        static readonly double[] MainWidths = { 6, 34, 30, 26, 26, 28, 42, 34, 28, 9, 12, 22, 20, 18, 20, 26, 26, 18, 34, 30, 44, 44, 48, 16, 28, 22, 24, 16, 19, 16 };
+        static readonly double[] MainWidths = { 6, 34, 30, 26, 26, 28, 42, 34, 28, 9, 12, 22, 20, 18, 18, 20, 26, 26, 18, 34, 30, 44, 44, 48, 16, 28, 22, 24, 16, 19, 16 };
 
         /// <summary>Сравнение номеров вида 1.2, 1.10, 2.1.</summary>
         public static int CompareId(string a, string b)
@@ -287,7 +287,7 @@ namespace PcInventory
                     {
                         new XCell(n, Xlsx.Center), T(Title(r)), T(r["Cpu"]), T(r["Ram"]), T(r["Board"]), T(r["Gpu"]), T(r["Disk"]),
                         T(r["Monitor"]), T(r["Os"]), new XCell(r["OsVer"], Xlsx.Center), new XCell(inst, Xlsx.Date), T(r["Av"]), T(r["Note"]),
-                        T(r["Dept"]), T(map != null ? map.RoomTitle(map.RoomOfPc(r)) : ""), T(r["Fio"]), T(r["PcModel"]), T(r["Serial"]), G(r["WinAct"], r["WinActSt"]), T(r["Office"]),
+                        T(r["Dept"]), T(BuildingOf(map, r)), T(map != null ? map.RoomOf(r) : ""), T(r["Fio"]), T(r["PcModel"]), T(r["Serial"]), G(r["WinAct"], r["WinActSt"]), T(r["Office"]),
                         G(r["OfficeAct"], r["OfficeActSt"]), G(r["AvAct"], r["AvActSt"]), G(r["DiskHealth"], r["DiskHealthSt"]), T(r["OsBuild"]), T(r["Bios"]),
                         T(r["User"]), T(r["Domain"]), T(r["Ip"]), T(r["Mac"]), new XCell(coll, Xlsx.DateTimeSt),
                     });
@@ -365,6 +365,13 @@ namespace PcInventory
         }
 
         static XCell T(string s) => new XCell(s ?? "", Xlsx.Text);
+
+        /// <summary>Здание ПК: по его кабинету на карте, без карты — из карточки АРМ.</summary>
+        static string BuildingOf(ResolvedMap map, PcRecord r)
+        {
+            var b = map != null ? map.Doc.BuildingOf(map.RoomOfPc(r)) : null;
+            return b != null ? b.Name : r["Building"];
+        }
 
         /// <summary>Ячейка с подсветкой: зелёная — всё в порядке, красная — требует внимания.</summary>
         static XCell G(string s, string grade) =>

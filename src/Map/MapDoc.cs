@@ -43,11 +43,37 @@ namespace PcInventory
         public const string DefaultBuilding = "Главное здание";
         public List<Building> Buildings = new List<Building>();
         public List<Floor> Floors = new List<Floor>();
+        /// <summary>Значки, убранные с карты вручную («pc:ключ», «pr:ключ») — например принтеры от старых драйверов.</summary>
+        public Dictionary<string, string> Hidden = new Dictionary<string, string>();
 
         public Building BuildingById(string id)
         {
             foreach (var b in Buildings) if (b.Id == id) return b;
             return null;
+        }
+
+        public Building BuildingByName(string name)
+        {
+            foreach (var b in Buildings) if (string.Equals(b.Name.Trim(), (name ?? "").Trim(), StringComparison.CurrentCultureIgnoreCase)) return b;
+            return null;
+        }
+
+        /// <summary>Здание, где стоит кабинет (через его этаж).</summary>
+        public Building BuildingOf(Room r)
+        {
+            var f = r == null ? null : FloorById(r.FloorId);
+            return f == null ? null : BuildingById(f.BuildingId);
+        }
+
+        /// <summary>Здание по названию — найти или создать вместе с «1 этажом».</summary>
+        public Building EnsureBuilding(string name)
+        {
+            var b = BuildingByName(name);
+            if (b != null) return b;
+            b = new Building { Id = NewId("b"), Name = name.Trim() };
+            Buildings.Add(b);
+            Floors.Add(new Floor { Id = NewId("f"), BuildingId = b.Id, Name = "1 этаж" });
+            return b;
         }
 
         /// <summary>Этажи здания в порядке вкладок.</summary>
@@ -134,6 +160,11 @@ namespace PcInventory
                             Id = e.GetAttribute("id"), FloorId = e.GetAttribute("floor"), Name = e.GetAttribute("name"), Dept = e.GetAttribute("dept"),
                             X = Int(e, "x", 0), Y = Int(e, "y", 0), W = Int(e, "w", 240), H = Int(e, "h", 160), Auto = e.GetAttribute("auto") == "1"
                         });
+                    else if (e.Name == "hidden")
+                    {
+                        string item = e.GetAttribute("item");
+                        if (item != "") m.Hidden[item] = e.GetAttribute("name");
+                    }
                     else if (e.Name == "place")
                     {
                         var p = new Place { Item = e.GetAttribute("item"), RoomId = e.GetAttribute("room"), X = Int(e, "x", 0), Y = Int(e, "y", 0) };
@@ -191,6 +222,14 @@ namespace PcInventory
                     A(w, "id", r.Id); A(w, "floor", r.FloorId); A(w, "name", r.Name); A(w, "dept", r.Dept);
                     A(w, "x", r.X); A(w, "y", r.Y); A(w, "w", r.W); A(w, "h", r.H);
                     if (r.Auto) A(w, "auto", "1");
+                    w.WriteEndElement();
+                }
+                var hidden = new List<string>(Hidden.Keys);
+                hidden.Sort(StringComparer.Ordinal);
+                foreach (var k in hidden)
+                {
+                    w.WriteStartElement("hidden");
+                    A(w, "item", k); A(w, "name", Hidden[k]);
                     w.WriteEndElement();
                 }
                 var keys = new List<string>(Places.Keys);

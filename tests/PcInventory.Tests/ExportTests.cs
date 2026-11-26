@@ -91,7 +91,7 @@ namespace PcInventory.Tests
             {
                 var f = m.Doc.Floors[fi];
                 var page = Xml(parts["visio/pages/page" + (fi + 1) + ".xml"]);
-                int expected = m.RoomsOn(f).Count + m.ItemsOn(f).Count + (fi == 1 ? 1 : 0);
+                int expected = 1 + m.RoomsOn(f).Count + m.ItemsOn(f).Count + (fi == 1 ? 1 : 0); // рамка здания + кабинеты + значки (+ подложка)
                 Assert.Equal(expected, page.SelectNodes("//v:Shapes/v:Shape", ns).Count);
             }
             var page1 = Xml(parts["visio/pages/page1.xml"]);

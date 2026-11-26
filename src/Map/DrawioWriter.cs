@@ -36,6 +36,16 @@ namespace PcInventory
                                       Geo(0, 0, f.W, f.H) + "</mxCell>");
                         }
 
+                // здание — пунктирная рамка на всё поле, под кабинетами
+                {
+                    var bld = m.Doc.BuildingById(f.BuildingId);
+                    string bname = bld != null ? bld.Name : "";
+                    var fr = MapRenderer.Frame(m, f, false);
+                    sb.Append("<object id=\"building" + (fi + 1) + "\" label=\"" + Esc(bname + (f.Name != "" ? " · " + f.Name : "")) + "\"" + Attr("Здание", bname) + Attr("Этаж", f.Name) + ">");
+                    sb.Append("<mxCell style=\"rounded=1;arcSize=2;fillColor=none;dashed=1;strokeColor=" + Hex(P.Accent) + ";fontColor=" + Hex(P.Accent) +
+                              ";fontStyle=1;fontSize=14;align=left;verticalAlign=top;spacingLeft=12;spacingTop=2;\" vertex=\"1\" parent=\"1\">");
+                    sb.Append(Geo(fr.X, fr.Y, fr.Width, fr.Height) + "</mxCell></object>");
+                }
                 foreach (var r in m.RoomsOn(f))
                 {
                     sb.Append("<object id=\"" + Esc(r.Id) + "\" label=\"" + Esc(r.Name) + "\"" + Attr("Кабинет", r.Name) + Attr("Отдел", r.Dept) + Attr("Этаж", f.Name) + ">");

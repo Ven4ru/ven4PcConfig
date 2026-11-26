@@ -17,6 +17,8 @@ namespace PcInventory.Gui
         readonly V4Button btnReset = new V4Button("Расставить заново", Theme.IcoRefresh, false);
         readonly V4Button btnBg = new V4Button("Подложка…", Theme.IcoFolder, false);
         readonly V4Button btnRoom = new V4Button("Кабинет +", Theme.IcoCard, false);
+        readonly V4Button btnHidden = new V4Button("Скрытые", null, false) { Visible = false };
+        readonly ContextMenuStrip hiddenMenu = new ContextMenuStrip { Renderer = new DarkRenderer(), ShowImageMargin = false, Font = Theme.Body };
         readonly FloorTabs tabs = new FloorTabs();
         readonly V4Button btnBuilding = new V4Button("Здание", null, false);
         readonly ContextMenuStrip bldMenu = new ContextMenuStrip { Renderer = new DarkRenderer(), ShowImageMargin = false, Font = Theme.Body };
@@ -34,7 +36,11 @@ namespace PcInventory.Gui
             this.header = header;
             Dock = DockStyle.Fill;
             Visible = false;
-            foreach (Control c in new Control[] { title, btnExport, btnReset, btnBg, btnRoom, btnBuilding, tabs, Canvas }) Controls.Add(c);
+            foreach (Control c in new Control[] { title, btnExport, btnReset, btnBg, btnRoom, btnHidden, btnBuilding, tabs, Canvas }) Controls.Add(c);
+            hiddenMenu.BackColor = Theme.Raised;
+            hiddenMenu.ForeColor = Theme.Text;
+            btnHidden.Click += (o, e) => ShowHiddenMenu();
+            Canvas.DeletePc += (o, e) => DeletePc(e.Item.Pc);
             bldMenu.BackColor = Theme.Raised;
             bldMenu.ForeColor = Theme.Text;
             btnBuilding.Click += (o, e) => ShowBuildingMenu();
@@ -82,6 +88,9 @@ namespace PcInventory.Gui
             Canvas.SetMap(map, CurFloor);
             btnBuilding.Text = (CurBuilding != null ? CurBuilding.Name : "Здание") + "  ▾";
             btnBuilding.Width = btnBuilding.Preferred();
+            btnHidden.Visible = map.Doc.Hidden.Count > 0;
+            btnHidden.Text = "Скрытые (" + map.Doc.Hidden.Count + ")";
+            btnHidden.Width = btnHidden.Preferred();
             int pcs = 0, pr = 0;
             foreach (var i in map.Items) if (i.IsPc) pcs++; else pr++;
             string sub = s.All.Count == 0 ? "Компьютеры появятся на карте после сохранения в реестр"
@@ -111,7 +120,13 @@ namespace PcInventory.Gui
             title.SetBounds(pad, Theme.S(22), bx - pad - gap, Theme.S(64));
             btnBuilding.SetBounds(pad, Theme.S(96), btnBuilding.Width, Theme.S(36));
             int tx = pad + btnBuilding.Width + Theme.S(12);
-            tabs.SetBounds(tx, Theme.S(96), pad + W - tx, Theme.S(36));
+            int tr = pad + W;
+            if (btnHidden.Visible)
+            {
+                btnHidden.SetBounds(pad + W - btnHidden.Width, Theme.S(96), btnHidden.Width, Theme.S(36));
+                tr = btnHidden.Left - Theme.S(12);
+            }
+            tabs.SetBounds(tx, Theme.S(96), tr - tx, Theme.S(36));
             int top = Theme.S(140);
             Canvas.SetBounds(pad, top, W, Math.Max(Theme.S(200), ClientSize.Height - top - Theme.S(24)));
         }
@@ -162,6 +177,47 @@ namespace PcInventory.Gui
                     try { s.SaveRecord(pc); } catch { }
                     if (s.Current != null && s.Current.Key == pc.Key) s.Current["RoomId"] = "";
                 }
+            Save();
+        }
+
+        /// <summary>«Скрытые (N)»: вернуть убранный значок на карту или все сразу.</summary>
+        void ShowHiddenMenu()
+        {
+            hiddenMenu.Items.Clear();
+            var keys = new List<string>(s.Map.Hidden.Keys);
+            keys.Sort((a, b) => string.Compare(s.Map.Hidden[a], s.Map.Hidden[b], StringComparison.CurrentCultureIgnoreCase));
+            foreach (var k in keys)
+            {
+                string key = k;
+                string kind = k.StartsWith("pc:") ? "ПК " : "принтер ";
+                var mi = new ToolStripMenuItem("Вернуть " + kind + s.Map.Hidden[k]) { ForeColor = Theme.Text };
+                mi.Click += (o, e) => { s.Map.Hidden.Remove(key); Save(); };
+                hiddenMenu.Items.Add(mi);
+            }
+            hiddenMenu.Items.Add(new ToolStripSeparator());
+            var all = new ToolStripMenuItem("Вернуть все") { ForeColor = Theme.Text };
+            all.Click += (o, e) => { s.Map.Hidden.Clear(); Save(); };
+            hiddenMenu.Items.Add(all);
+            hiddenMenu.Show(btnHidden, new Point(0, btnHidden.Height + Theme.S(2)));
+        }
+
+        /// <summary>Удалить лишний ПК из реестра (файл уходит в «удалённые», вернуть — переложить обратно и «Пересобрать»).</summary>
+        void DeletePc(PcRecord pc)
+        {
+            if (s.Current != null && s.Current.Key == pc.Key)
+            {
+                ConfirmDialog.Ask(FindForm(), "Удалить компьютер", "Это компьютер, на котором запущена программа: при сохранении он снова попадёт в реестр. Чтобы он не мешал на карте, уберите его с карты.", "Понятно");
+                return;
+            }
+            if (!ConfirmDialog.Ask(FindForm(), "Удалить компьютер", "Удалить «" + Report.ShortTitle(pc) + (pc["Fio"] != "" ? " — " + pc["Fio"] : "") +
+                "» из реестра и с карты? Его файл переносится в папку «" + Program.DataDirName + "\\удалённые» — вернуть можно, переложив его обратно и нажав «Пересобрать» в разделе «Реестр».", "Удалить")) return;
+            try
+            {
+                s.RemoveRecord(pc);
+                bool busy;
+                if (s.All.Count > 0) s.BuildXlsx(out busy);
+            }
+            catch (Exception ex) { ConfirmDialog.Ask(FindForm(), "Удалить компьютер", "Не удалось удалить: " + ex.Message, "Понятно"); }
             Save();
         }
 

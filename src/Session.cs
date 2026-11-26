@@ -75,6 +75,18 @@ namespace PcInventory
 
         public void SaveSettings() { Report.Rules = Settings; if (!ReadOnly) Settings.Save(SettingsPath); }
 
+        /// <summary>Убрать ПК из реестра (файл уходит в папку «удалённые»). Этот компьютер убрать нельзя — он пересохранится при сборе.</summary>
+        public string RemoveRecord(PcRecord r)
+        {
+            if (ReadOnly) { All.Remove(r); return null; }
+            string moved = Store.Remove(r);
+            All.Remove(r);
+            Map.Hidden.Remove("pc:" + r.Key);
+            Map.Places.Remove("pc:" + r.Key);
+            if (Prev == r) Prev = null;
+            return moved;
+        }
+
         /// <summary>Сохранить запись другого ПК (например, перетащили на карте в другой кабинет).</summary>
         public void SaveRecord(PcRecord r) { if (!ReadOnly) Store.Save(r); }
 
@@ -125,7 +137,7 @@ namespace PcInventory
                 }
             // запись переименованного ПК пишется в его прежний файл — иначе в реестре появится вторая строка
             if (prev != null && prev.Key != "") rec.Key = prev.Key;
-            foreach (var k in new[] { "Dept", "ArmId", "Fio", "Note", "RoomId" })
+            foreach (var k in new[] { "Building", "Dept", "ArmId", "Fio", "Note", "RoomId" })
                 rec[k] = prev != null ? prev[k] : "";
             if (prev == null && rec["Fio"] == "") rec["Fio"] = rec["UserFullName"];
             if (prev != null) rec.Changes.AddRange(prev.Changes); // история переходит к новой записи

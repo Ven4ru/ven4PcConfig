@@ -211,6 +211,21 @@ namespace PcInventory
                           CS("LayerMember", "0") + C("LockSelect", 1));
                 sb.Append("<ForeignData ForeignType=\"Bitmap\" CompressionType=\"PNG\"><Rel r:id=\"rId1\"/></ForeignData></Shape>");
             }
+            // здание — пунктирная рамка на всё поле с названием сверху, кабинеты внутри
+            {
+                var bld = m.Doc.BuildingById(f.BuildingId);
+                string bname = bld != null ? bld.Name : "";
+                sb.Append("<Shape ID=\"" + id + "\" NameU=\"Building." + id++ + "\" Name=\"" + Esc(bname) + "\" Type=\"Shape\" LineStyle=\"0\" FillStyle=\"0\" TextStyle=\"0\">");
+                sb.Append(Xform(f, MapRenderer.Frame(m, f, false)));
+                sb.Append(C("FillPattern", 0) + CS("LineColor", Hex(P.Accent)) + C("LinePattern", 2) + C("LineWeight", 0.0138888) + C("Rounding", 0.08) +
+                          C("VerticalAlign", 0) + C("TopMargin", 0.04) + C("LeftMargin", 0.12) + CS("LayerMember", "1"));
+                sb.Append("<Section N=\"Character\"><Row IX=\"0\">" + CS("Font", "Segoe UI") + CS("Color", Hex(P.Accent)) + C("Style", 1) + C("Size", 0.14) + "</Row></Section>");
+                sb.Append("<Section N=\"Paragraph\"><Row IX=\"0\">" + C("HorzAlign", 0) + "</Row></Section>");
+                sb.Append(Props(new[] { new[] { "Building", "Здание", bname }, new[] { "Floor", "Этаж", f.Name } }));
+                sb.Append(Rect());
+                sb.Append("<Text>" + Esc(bname + (f.Name != "" ? " · " + f.Name : "")) + "</Text>");
+                sb.Append("</Shape>");
+            }
             foreach (var r in m.RoomsOn(f))
             {
                 sb.Append("<Shape ID=\"" + id + "\" NameU=\"Room." + id++ + "\" Name=\"" + Esc(r.Name) + "\" Type=\"Shape\" LineStyle=\"0\" FillStyle=\"0\" TextStyle=\"0\">");
@@ -252,7 +267,7 @@ namespace PcInventory
             return new[]
             {
                 new[] { "ArmId", "Номер АРМ", r["ArmId"] }, new[] { "PcName", "Компьютер", r["PcName"] }, new[] { "Dept", "Отдел", r["Dept"] },
-                new[] { "Room", "Кабинет", m.RoomTitle(m.RoomOfPc(r)) }, new[] { "Fio", "ФИО", r["Fio"] }, new[] { "Model", "Модель ПК", r["PcModel"] },
+                new[] { "Building", "Здание", BuildingName(m, r) }, new[] { "Room", "Кабинет", m.RoomOf(r) }, new[] { "Fio", "ФИО", r["Fio"] }, new[] { "Model", "Модель ПК", r["PcModel"] },
                 new[] { "Cpu", "Процессор", r["Cpu"] }, new[] { "Ram", "ОЗУ", r["Ram"] }, new[] { "Board", "Мат. плата", r["Board"] },
                 new[] { "Gpu", "Видео", r["Gpu"] }, new[] { "Disk", "Накопители", r["Disk"] }, new[] { "Monitor", "Мониторы", r["Monitor"] },
                 new[] { "Os", "ОС", Util.Join(" ", new[] { r["Os"], r["OsVer"] }) }, new[] { "Ip", "IP-адрес", r["Ip"] }, new[] { "Mac", "MAC-адрес", r["Mac"] },
@@ -261,6 +276,12 @@ namespace PcInventory
                 new[] { "DiskHealth", "Состояние дисков", r["DiskHealth"] }, new[] { "Problems", "Замечания", string.Join("; ", Report.ProblemsOf(r).ToArray()) },
                 new[] { "Collected", "Дата сбора", r["Collected"] },
             };
+        }
+
+        static string BuildingName(ResolvedMap m, PcRecord r)
+        {
+            var b = m.Doc.BuildingOf(m.RoomOfPc(r));
+            return b != null ? b.Name : r["Building"];
         }
 
         public static string[][] PrinterProps(MapPrinter p)

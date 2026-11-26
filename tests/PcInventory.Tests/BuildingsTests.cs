@@ -15,6 +15,67 @@ namespace PcInventory.Tests
         public BuildingsTests() { Directory.CreateDirectory(dir); }
         public void Dispose() { try { Directory.Delete(dir, true); } catch { } }
 
+        static PcRecord In(PcRecord r, string building) { r["Building"] = building; return r; }
+
+        [Fact]
+        public void PcBuilding_CreatesBuildingAndDeptRoomInside_DefaultBuildingRemovedWhenEmpty()
+        {
+            var d = new MapDoc();
+            var m = MapLayout.Resolve(d, List(In(Pc("a", "ИТ"), "ЦИТС"), In(Pc("b", "ИТ"), "Склад №2"), In(Pc("c", "Бухгалтерия"), "ЦИТС")));
+            Assert.Equal(2, d.Buildings.Count); // «Главное здание» по умолчанию не нужно — все ПК в своих зданиях
+            Assert.NotNull(d.BuildingByName("цитс"));
+            Assert.Equal("ЦИТС", d.BuildingOf(m.PcRooms["a"]).Name);
+            Assert.Equal("Склад №2", d.BuildingOf(m.PcRooms["b"]).Name);
+            Assert.NotSame(m.PcRooms["a"], m.PcRooms["b"]); // отдел ИТ в разных зданиях — разные кабинеты
+            // кабинеты внутри рамки здания (ниже её заголовка)
+            foreach (var f in d.Floors)
+            {
+                var frame = MapRenderer.Frame(m, f, false);
+                foreach (var r in m.RoomsOn(f))
+                {
+                    Assert.True(frame.Contains(r.Rect));
+                    Assert.True(r.Y >= frame.Y + MapRenderer.FrameHead);
+                }
+            }
+        }
+
+        [Fact]
+        public void Hidden_ItemsNotOnMap_PcRoomKept()
+        {
+            var d = new MapDoc();
+            var pcs = List(Pc("a", "Склад", printers: new[] { LocalPrinter("Old HP 1020"), LocalPrinter("Canon") }), Pc("b", "Склад"));
+            var m = MapLayout.Resolve(d, pcs);
+            Assert.Equal(4, m.Items.Count);
+            d.Hidden["pr:a|old hp 1020"] = "Old HP 1020";
+            d.Hidden["pc:b"] = "B";
+            var m2 = MapLayout.Resolve(d, pcs);
+            Assert.Equal(2, m2.Items.Count);
+            Assert.Null(m2.ItemByKey("pr:a|old hp 1020"));
+            Assert.Null(m2.ItemByKey("pc:b"));
+            Assert.NotNull(m2.RoomOfPc(pcs[1])); // скрытый ПК остаётся в реестре со своим кабинетом
+            Assert.Equal(3, m2.AllPrinters.Count + 1);
+            // круговая запись скрытых
+            string path = Path.Combine(dir, "карта.xml");
+            d.Save(path);
+            string err;
+            Assert.Equal(2, MapDoc.Load(path, out err).Hidden.Count);
+        }
+
+        [Fact]
+        public void RemoveRecord_MovesFileToDeleted()
+        {
+            var s = new Session(dir + Path.DirectorySeparatorChar);
+            s.Store.Save(Pc("a", "Склад"));
+            s.Store.Save(Pc("b", "Склад"));
+            s.Load();
+            string moved = s.RemoveRecord(s.All.Find(p => p.Key == "b"));
+            Assert.True(File.Exists(moved));
+            Assert.Contains("удалённые", moved);
+            var again = new Session(s.BaseDir); again.Load();
+            Assert.Single(again.All);
+            Assert.Empty(again.LoadErrors);
+        }
+
         static MapDoc TwoBuildings()
         {
             var d = new MapDoc();
@@ -56,12 +117,15 @@ namespace PcInventory.Tests
         public void MoveRoom_ToFloorOfOtherBuilding()
         {
             var d = TwoBuildings();
-            var m = MapLayout.Resolve(d, List(Pc("a", "Склад"), Pc("b", "Склад")));
+            var pcs = List(In(Pc("a", "Склад"), "Склад"), In(Pc("b", "Склад"), "Склад"));
+            var m = MapLayout.Resolve(d, pcs);
+            Assert.Equal("r1", m.PcRooms["a"].Id); // кабинет отдела «Склад» в здании «Склад»
             var room = d.RoomById("r1");
-            MapLayout.MoveRoom(d, room, d.FloorById("f2"));
+            Assert.Equal(2, MapLayout.MoveRoom(m, room, d.FloorById("f2")).Count); // у обоих ПК здание стало «Главный корпус»
+            Assert.Equal("Главный корпус", pcs[0]["Building"]);
             Assert.Equal("f2", room.FloorId);
             Assert.False(room.Auto);
-            var m2 = MapLayout.Resolve(d, List(Pc("a", "Склад"), Pc("b", "Склад")));
+            var m2 = MapLayout.Resolve(d, pcs);
             Assert.Equal(2, m2.ItemsOn(d.FloorById("f2")).Count); // ПК переехали вместе с кабинетом
             Assert.Empty(m2.ItemsOn(d.FloorById("f3")));
         }
@@ -87,7 +151,7 @@ namespace PcInventory.Tests
         public void Vsdx_PageNamesWithBuilding_AndIconGeometry()
         {
             var d = TwoBuildings();
-            var m = MapLayout.Resolve(d, List(Pc("a", "Склад", printers: new[] { LocalPrinter("Canon") })));
+            var m = MapLayout.Resolve(d, List(In(Pc("a", "Склад", printers: new[] { LocalPrinter("Canon") }), "Склад")));
             var ns = new XmlNamespaceManager(new NameTable());
             ns.AddNamespace("v", "http://schemas.microsoft.com/office/visio/2012/main");
             XmlDocument pages = null, page3 = null;

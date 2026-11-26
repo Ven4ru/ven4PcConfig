@@ -22,6 +22,8 @@ namespace PcInventory
         public MapDoc Doc;
         public List<MapItem> Items = new List<MapItem>();
         public readonly Dictionary<string, Room> PcRooms = new Dictionary<string, Room>();
+        /// <summary>Все принтеры, включая скрытые (для списка «Скрытые» в окне).</summary>
+        public readonly List<MapPrinter> AllPrinters = new List<MapPrinter>();
         /// <summary>Кабинеты, значки которых не поместились в заданный админом размер.</summary>
         public readonly Dictionary<string, bool> Overflow = new Dictionary<string, bool>();
 
@@ -37,6 +39,15 @@ namespace PcInventory
             var list = new List<MapItem>();
             foreach (var i in Items) if (i.Room != null && i.Room.FloorId == f.Id) list.Add(i);
             return list;
+        }
+
+        /// <summary>Кабинет ПК для таблиц: «2 этаж · 204» (без здания — оно в своей колонке).</summary>
+        public string RoomOf(PcRecord pc)
+        {
+            var r = RoomOfPc(pc);
+            if (r == null) return "";
+            var f = Doc.FloorById(r.FloorId);
+            return f != null && Doc.FloorsOf(Doc.BuildingById(f.BuildingId)).Count > 1 ? f.Name + " · " + r.Name : r.Name;
         }
 
         public Room RoomOfPc(PcRecord pc)
@@ -106,27 +117,30 @@ namespace PcInventory
         {
             doc.EnsureBuildings();
             if (doc.Floors.Count == 0) doc.Floors.Add(new Floor { Id = doc.NewId("f"), BuildingId = doc.Buildings[0].Id, Name = "1 этаж" });
-            var first = doc.Floors[0];
             var m = new ResolvedMap { Doc = doc };
             var sorted = Report.Sorted(pcs);
             var created = new List<Room>();
 
-            // 1. кабинет каждого ПК
+            // 1. кабинет каждого ПК: выбранный в карточке → кабинет отдела в здании ПК → новый кабинет отдела там же
             foreach (var pc in sorted)
             {
+                // здание из карточки АРМ; новое название — новое здание с «1 этажом»
+                var building = pc["Building"].Trim() != "" ? doc.EnsureBuilding(pc["Building"]) : doc.Buildings[0];
                 Room room = doc.RoomById(pc["RoomId"]);
                 if (room == null)
                 {
                     string dept = pc["Dept"].Trim() != "" ? pc["Dept"].Trim() : NoDept;
-                    room = DeptRoom(doc, dept);
+                    room = DeptRoom(doc, dept, building);
                     if (room == null)
                     {
-                        room = new Room { Id = doc.NewId("r"), FloorId = first.Id, Name = dept, Dept = dept, Auto = true };
+                        var floor = doc.FloorsOf(building)[0];
+                        room = new Room { Id = doc.NewId("r"), FloorId = floor.Id, Name = dept, Dept = dept, Auto = true };
                         doc.Rooms.Add(room);
                         created.Add(room);
                     }
                 }
                 m.PcRooms[pc.Key] = room;
+                if (doc.Hidden.ContainsKey("pc:" + pc.Key)) continue; // убран с карты вручную
                 m.Items.Add(new MapItem
                 {
                     Key = "pc:" + pc.Key, Pc = pc, Room = room,
@@ -139,6 +153,8 @@ namespace PcInventory
             // 2. принтеры: в кабинет, куда их перетащили, иначе к первому ПК
             foreach (var p in Printers.FromPcs(sorted))
             {
+                m.AllPrinters.Add(p);
+                if (doc.Hidden.ContainsKey(p.Key)) continue; // лишний принтер (драйвер от старого аппарата и т. п.)
                 Place pl;
                 Room room = doc.Places.TryGetValue(p.Key, out pl) ? doc.RoomById(pl.RoomId) : null;
                 if (room == null) room = m.PcRooms[p.Pcs[0].Key];
@@ -148,7 +164,21 @@ namespace PcInventory
             // 3. автоматические кабинеты без значков больше не нужны (отдел исчез из реестра)
             var used = new Dictionary<string, bool>();
             foreach (var i in m.Items) used[i.Room.Id] = true;
+            foreach (var r in m.PcRooms.Values) used[r.Id] = true; // кабинет скрытого ПК не пропадает и не создаётся заново
             doc.Rooms.RemoveAll(r => r.Auto && !used.ContainsKey(r.Id));
+            // «Главное здание», которое программа создала сама, — убрать, если все ПК записаны в свои здания и в нём пусто
+            var def = doc.BuildingByName(MapDoc.DefaultBuilding);
+            if (def != null && doc.Buildings.Count > 1)
+            {
+                bool empty = true;
+                foreach (var f in doc.FloorsOf(def))
+                    if (f.Bg != "" || m.RoomsOn(f).Count > 0) empty = false;
+                if (empty)
+                {
+                    doc.Floors.RemoveAll(f => f.BuildingId == def.Id);
+                    doc.Buildings.Remove(def);
+                }
+            }
 
             // 4. размеры auto-кабинетов, места новых кабинетов, места значков
             foreach (var r in doc.Rooms)
@@ -167,14 +197,25 @@ namespace PcInventory
             return (f != null ? doc.FloorTitle(f) + " · " : "") + r.Name;
         }
 
-        /// <summary>Перенести кабинет на другой этаж (в том числе другого здания) — в свободное место; значки едут с ним.</summary>
-        public static void MoveRoom(MapDoc doc, Room r, Floor to)
+        /// <summary>Перенести кабинет на другой этаж (в том числе другого здания) — в свободное место; значки едут с ним.
+        /// Если здание другое, у ПК этого кабинета меняется здание в карточке — возвращаются их записи (их нужно сохранить).</summary>
+        public static List<PcRecord> MoveRoom(ResolvedMap m, Room r, Floor to)
         {
-            if (r.FloorId == to.Id) return;
+            var changed = new List<PcRecord>();
+            var doc = m.Doc;
+            if (r.FloorId == to.Id) return changed;
+            var oldB = doc.BuildingOf(r);
             r.FloorId = to.Id;
             r.Auto = false;
             r.X = 0; r.Y = 0;
             PlaceRoom(doc, r);
+            var newB = doc.BuildingById(to.BuildingId);
+            if (newB != null && newB != oldB)
+                foreach (var kv in m.PcRooms)
+                    if (kv.Value == r)
+                        foreach (var it in m.Items)
+                            if (it.IsPc && it.Pc.Key == kv.Key) { it.Pc["Building"] = newB.Name; changed.Add(it.Pc); }
+            return changed;
         }
 
         /// <summary>Перенести значок в кабинет (на любом этаже). Место в кабинете — первая свободная ячейка.
@@ -185,6 +226,8 @@ namespace PcInventory
             {
                 doc.Places.Remove(it.Key);
                 it.Pc["RoomId"] = to.Id;
+                var b = doc.BuildingOf(to);
+                if (b != null) it.Pc["Building"] = b.Name; // ПК переехал в кабинет другого здания — здание в карточке тоже
                 return it.Pc;
             }
             doc.Places[it.Key] = new Place { Item = it.Key, RoomId = to.Id, X = -1, Y = -1 };
@@ -198,10 +241,11 @@ namespace PcInventory
             doc.Rooms.RemoveAll(r => r.Auto);
         }
 
-        static Room DeptRoom(MapDoc doc, string dept)
+        /// <summary>Кабинет отдела в этом здании (один и тот же отдел в разных зданиях — разные кабинеты).</summary>
+        static Room DeptRoom(MapDoc doc, string dept, Building building)
         {
             foreach (var r in doc.Rooms)
-                if (string.Equals(r.Dept.Trim(), dept, StringComparison.OrdinalIgnoreCase)) return r;
+                if (string.Equals(r.Dept.Trim(), dept, StringComparison.OrdinalIgnoreCase) && doc.BuildingOf(r) == building) return r;
             return null;
         }
 
